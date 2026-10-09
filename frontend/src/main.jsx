@@ -532,7 +532,7 @@ function App() {
         </main>
         <footer>
           Grupo Abogados D Honduras{" "}
-          <span>Gestión de lotificadoras · v0.1.0</span>
+          <span>Gestión de lotificadoras · v0.1.1</span>
         </footer>
       </div>
       {password && (

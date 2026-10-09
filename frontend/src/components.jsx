@@ -242,7 +242,7 @@ export function Picker({
     const abort = new AbortController();
     const timer = setTimeout(() => {
       api(
-        `/entities/${entity}/${collection}?q=${encodeURIComponent(q)}&size=100`,
+        `/entities/${entity}/${collection}?q=${encodeURIComponent(q)}&size=100${collection === "clients" ? "&state=active" : ""}`,
         { signal: abort.signal },
       )
         .then((data) => setRows(data.items.filter(predicate)))

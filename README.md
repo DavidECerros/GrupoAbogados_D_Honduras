@@ -5,7 +5,7 @@ Implementación del documento de requisitos del 29 de septiembre de 2026.
 
 ## Estado del proyecto
 
-Primera versión funcional, v0.1.0. Incluye interfaz en español y backend para
+Primera versión funcional, v0.1.1. Incluye interfaz en español y backend para
 autenticación, segregación por entidad, clientes, lotes, reservas, contratos, cuotas,
 cobros, cesiones, autorizaciones, auditoría, recibos PDF, exportación Excel y
 respaldo/restauración. Las verificaciones y límites están en
@@ -22,7 +22,7 @@ formulario para crear el único superusuario.
 
 ## Uso en Windows
 
-El paquete `GrupoAbogados_D_Honduras-Windows-v0.1.0.zip` contiene Python,
+El paquete `GrupoAbogados_D_Honduras-Windows-v0.1.1.zip` contiene Python,
 dependencias y frontend compilado. Extraiga el ZIP en una carpeta local y abra
 `Iniciar.cmd`. El navegador abrirá `http://localhost:8000`.
 Use `CrearAccesoDirecto.ps1` para crear el acceso directo opcional.

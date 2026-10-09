@@ -55,6 +55,11 @@ class Client(Model):
     notes: str = Field(max_length=2000, default="")
 
 
+class ClientStatus(Model):
+    status: Literal["active", "inactive"]
+    reason: str = Field(min_length=3, max_length=2000)
+
+
 class Lot(Model):
     code: str = Field(min_length=1, max_length=80)
     description: str = Field(max_length=2000, default="")

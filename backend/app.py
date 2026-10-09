@@ -518,11 +518,17 @@ def pagination(page, size):
 
 
 @app.get("/api/entities/{entity}/clients")
-def clients(entity: int, user: User, db: DB, q: str = "", page: int = 1, size: int = 30):
+def clients(
+    entity: int, user: User, db: DB, q: str = "", page: int = 1, size: int = 30, state: str = ""
+):
     authorize(db, user, entity)
     limit, offset = pagination(page, size)
     filters = (entity, f"%{q}%", f"%{q}%")
     where = "entity_id=? AND (name LIKE ? OR document LIKE ?)"
+    require(state in ("", "active", "inactive"), "Estado de cliente inválido")
+    if state:
+        where += " AND status=?"
+        filters += (state,)
     return {
         "items": [
             dict(r)
@@ -588,6 +594,29 @@ def edit_client(identifier: int, data: m.Client, user: User, db: DB):
         previous["entity_id"],
         "client",
         identifier,
+        before=previous,
+        after=result,
+    )
+    return result
+
+
+@app.patch("/api/clients/{identifier}/status")
+def change_client_status(identifier: int, data: m.ClientStatus, user: User, db: DB):
+    admin(user)
+    previous = row(db, "clients", identifier)
+    authorize(db, user, previous["entity_id"], True)
+    if previous["status"] == data.status:
+        return previous
+    db.execute("UPDATE clients SET status=? WHERE id=?", (data.status, identifier))
+    result = row(db, "clients", identifier)
+    audit(
+        db,
+        user,
+        "deactivate_client" if data.status == "inactive" else "reactivate_client",
+        previous["entity_id"],
+        "client",
+        identifier,
+        reason=data.reason,
         before=previous,
         after=result,
     )
@@ -677,6 +706,7 @@ def reserve(entity: int, data: m.Reservation, user: User, db: DB):
         "Registros de otra entidad",
         403,
     )
+    require(client["status"] == "active", "Cliente inhabilitado; reactívelo antes de reservar", 409)
     require(lot["status"] == "available", "Lote no disponible", 409)
     require(data.expires_on >= today(db), "La reserva ya venció")
     identifier = db.execute(
@@ -981,6 +1011,11 @@ def request_approval(entity: int, data: m.Approval, user: User, db: DB):
         )
     if data.action == "transfer_contract":
         parsed = m.Transfer(reason=data.reason, **data.payload)
+        require(
+            row(db, "clients", parsed.new_client_id)["status"] == "active",
+            "Cliente inhabilitado; reactívelo antes de ceder",
+            409,
+        )
         require(
             row(db, "clients", parsed.new_client_id)["entity_id"] == entity,
             "Cliente de otra entidad",

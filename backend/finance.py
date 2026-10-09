@@ -78,6 +78,9 @@ def create_sale(db, user, entity, data):
     require(
         lot["currency"] == data.currency, "La moneda contractual debe coincidir con la del lote"
     )
+    require(
+        client["status"] == "active", "Cliente inhabilitado; reactívelo antes de contratar", 409
+    )
     require(lot["status"] != "sold", "Lote vendido", 409)
     if lot["status"] == "reserved":
         reservation = db.execute(
@@ -334,6 +337,7 @@ def transfer_contract(db, user, identifier, data):
     authorize(db, user, contract["entity_id"], True)
     client = row(db, "clients", data.new_client_id)
     require(client["entity_id"] == contract["entity_id"], "Cliente de otra entidad", 403)
+    require(client["status"] == "active", "Cliente inhabilitado; reactívelo antes de ceder", 409)
     require(client["id"] != contract["client_id"], "El nuevo propietario debe ser diferente")
     require(
         data.effective_date == today(db),

@@ -37,7 +37,28 @@ def initialize():
         db = connect()
         db.execute("PRAGMA journal_mode=WAL")
         db.executescript(Path(__file__).with_name("schema.sql").read_text(encoding="utf-8"))
+        migrate(db)
         db.close()
+
+
+def migrate(db):
+    """Upgrade existing v1 databases without replacing any customer records."""
+    version = db.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
+    if version not in (1, 2):
+        raise ValueError("Esquema incompatible")
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        columns = {r[1] for r in db.execute("PRAGMA table_info(clients)")}
+        if "status" not in columns:
+            db.execute(
+                "ALTER TABLE clients ADD COLUMN status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','inactive'))"
+            )
+        db.execute("DELETE FROM schema_version")
+        db.execute("INSERT INTO schema_version VALUES(2)")
+        db.commit()
+    except BaseException:
+        db.rollback()
+        raise
 
 
 @contextmanager

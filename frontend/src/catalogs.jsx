@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Edit3, Plus, Trash2, Upload } from "lucide-react";
+import { Edit3, Plus, Trash2, Upload, UserX, UserCheck } from "lucide-react";
 import { api, money } from "./api";
 import {
   Badge,
@@ -17,8 +17,10 @@ import {
 export function Catalog({ kind, entity, admin, refresh, version, notify }) {
   const [q, setQ] = useState(""),
     [page, setPage] = useState(1),
-    [state, setState] = useState(""),
+    [state, setState] = useState(kind === "clients" ? "active" : ""),
     [editing, setEditing] = useState(null),
+    [changingStatus, setChangingStatus] = useState(null),
+    [statusReason, setStatusReason] = useState(""),
     [deleting, setDeleting] = useState(null);
   const global = kind === "entities";
   const path = global
@@ -38,6 +40,11 @@ export function Catalog({ kind, entity, admin, refresh, version, notify }) {
         { key: "document", title: "Documento" },
         { key: "phone", title: "Teléfono" },
         { key: "email", title: "Correo" },
+        {
+          key: "status",
+          title: "Estado",
+          render: (r) => <Badge value={r.status} />,
+        },
       ]
     : isLot
       ? [
@@ -83,6 +90,29 @@ export function Catalog({ kind, entity, admin, refresh, version, notify }) {
             onClick={() => setEditing(r)}
           >
             <Edit3 size={16} />
+          </button>
+        )}
+        {isClient && admin && (
+          <button
+            className="icon"
+            title={
+              r.status === "active"
+                ? "Inhabilitar cliente"
+                : "Reactivar cliente"
+            }
+            aria-label={
+              (r.status === "active" ? "Inhabilitar " : "Reactivar ") + r.name
+            }
+            onClick={() => {
+              setChangingStatus(r);
+              setStatusReason("");
+            }}
+          >
+            {r.status === "active" ? (
+              <UserX size={16} />
+            ) : (
+              <UserCheck size={16} />
+            )}
           </button>
         )}
         {global && (
@@ -137,6 +167,20 @@ export function Catalog({ kind, entity, admin, refresh, version, notify }) {
               : "Buscar por lote o ubicación"
           }
         />
+        {isClient && (
+          <select
+            aria-label="Estado del cliente"
+            value={state}
+            onChange={(e) => {
+              setState(e.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="active">Activos</option>
+            <option value="inactive">Inhabilitados</option>
+            <option value="">Todos los clientes</option>
+          </select>
+        )}
         {isLot && (
           <select
             aria-label="Estado del lote"
@@ -173,6 +217,56 @@ export function Catalog({ kind, entity, admin, refresh, version, notify }) {
         />
         {!global && <Pager total={total} page={page} onChange={setPage} />}
       </div>
+      {changingStatus && (
+        <Modal
+          title={
+            changingStatus.status === "active"
+              ? "Inhabilitar cliente"
+              : "Reactivar cliente"
+          }
+          onClose={() => setChangingStatus(null)}
+        >
+          <Form
+            confirm
+            onCancel={() => setChangingStatus(null)}
+            submit={
+              changingStatus.status === "active" ? "Inhabilitar" : "Reactivar"
+            }
+            onSubmit={async () => {
+              const next =
+                changingStatus.status === "active" ? "inactive" : "active";
+              await api(`/clients/${changingStatus.id}/status`, {
+                method: "PATCH",
+                body: { status: next, reason: statusReason },
+              });
+              setChangingStatus(null);
+              refresh();
+              notify(
+                next === "inactive"
+                  ? "Cliente inhabilitado; historial conservado"
+                  : "Cliente reactivado",
+              );
+            }}
+          >
+            <p>
+              <strong>{changingStatus.name}</strong>
+            </p>
+            <p>
+              {changingStatus.status === "active"
+                ? "Se conservarán sus contratos, pagos y recibos. Podrás seguir cobrando sus contratos actuales, pero no crear nuevas reservas, contratos o cesiones a su nombre. Puedes reactivarlo después."
+                : "El cliente volverá a estar disponible para nuevas reservas, contratos y cesiones."}
+            </p>
+            <Input
+              title="Motivo"
+              required
+              minLength={3}
+              maxLength={2000}
+              value={statusReason}
+              onChange={(e) => setStatusReason(e.target.value)}
+            />
+          </Form>
+        </Modal>
+      )}
       {deleting && (
         <Modal
           title="Eliminar lotificadora vacía"

@@ -1,4 +1,4 @@
-# Evidencia de aceptación de la versión 0.1.0
+# Evidencia de aceptación de la versión 0.1.1
 
 Fecha de verificación: 8 de octubre de 2026. Los datos son sintéticos y están
 aislados de la instalación de operación. El requerimiento fuente es la versión
@@ -6,9 +6,14 @@ aislados de la instalación de operación. El requerimiento fuente es la versió
 
 ## Pruebas automatizadas
 
-34 pruebas de backend pasan con pytest. Se verifica compilación de producción
+38 pruebas de backend pasan con pytest. Se verifica compilación de producción
 de React/Vite, revisión ESLint y revisión Ruff del backend. Los casos financieros
 usan valores en centavos, dos entidades y operadores separados.
+
+La actualización verifica inhabilitación/reactivación de clientes, permisos,
+filtros y migración del esquema anterior sin pérdida de registros. En el navegador
+se probaron modificación de condiciones, consulta de versiones y cesión con datos
+ficticios. Estos formularios ahora se muestran directamente en la ventana.
 
 | Criterio | Evidencia |
 | --- | --- |

@@ -261,6 +261,62 @@ export function Account({
       .then(setAccount)
       .catch((err) => setError(err.message));
   }, [identifier, version]);
+  if (action && account)
+    return (
+      <Modal
+        title={
+          (action === "transfer" ? "Ceder contrato" : "Modificar condiciones") +
+          " · Contrato #" +
+          identifier
+        }
+        onClose={() => setAction("")}
+        wide
+      >
+        <ContractAction
+          action={action}
+          account={account}
+          entity={entity}
+          admin={admin}
+          today={today}
+          onCancel={() => setAction("")}
+          onSaved={() => {
+            setAction("");
+            setVersion((v) => v + 1);
+            refresh();
+            notify(admin ? "Contrato actualizado" : "Solicitud enviada");
+          }}
+        />
+      </Modal>
+    );
+  if (versions && account)
+    return (
+      <Modal
+        title={"Versiones · Contrato #" + identifier}
+        onClose={() => setVersions(null)}
+        wide
+      >
+        <p>
+          Versión actual: <strong>{account.version}</strong>. Aquí se conservan
+          las condiciones anteriores.
+        </p>
+        {!versions.length ? (
+          <p>Sin modificaciones anteriores.</p>
+        ) : (
+          versions.map((r) => (
+            <div key={r.id} className="info-box">
+              <strong>Versión {r.version}</strong> · {r.reason}
+              <Details
+                data={JSON.parse(r.snapshot)}
+                currency={account.currency}
+              />
+            </div>
+          ))
+        )}
+        <button className="secondary" onClick={() => setVersions(null)}>
+          Volver al estado de cuenta
+        </button>
+      </Modal>
+    );
   return (
     <Modal
       title={"Estado de cuenta · Contrato #" + identifier}
@@ -411,40 +467,6 @@ export function Account({
                 </p>
               ))}
             </>
-          )}
-          {versions && (
-            <>
-              <h3>Versiones anteriores</h3>
-              {!versions.length ? (
-                <p>Sin modificaciones anteriores.</p>
-              ) : (
-                versions.map((r) => (
-                  <div key={r.id} className="info-box">
-                    <strong>Versión {r.version}</strong> · {r.reason}
-                    <Details
-                      data={JSON.parse(r.snapshot)}
-                      currency={account.currency}
-                    />
-                  </div>
-                ))
-              )}
-            </>
-          )}
-          {action && (
-            <ContractAction
-              action={action}
-              account={account}
-              entity={entity}
-              admin={admin}
-              today={today}
-              onCancel={() => setAction("")}
-              onSaved={() => {
-                setAction("");
-                setVersion((v) => v + 1);
-                refresh();
-                notify(admin ? "Contrato actualizado" : "Solicitud enviada");
-              }}
-            />
           )}
         </>
       ) : (

@@ -249,13 +249,15 @@ def restore(content, user):
                     not probe.execute("PRAGMA foreign_key_check").fetchall(), "Relaciones inválidas"
                 )
                 require(
-                    probe.execute("SELECT version FROM schema_version").fetchone()[0] == 1,
+                    probe.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
+                    in (1, 2),
                     "Esquema incompatible",
                 )
                 superuser = probe.execute(
                     "SELECT id,role FROM users WHERE role='superuser' AND active=1"
                 ).fetchall()
                 require(len(superuser) == 1, "Respaldo sin superusuario único")
+                database.migrate(probe)
             finally:
                 probe.close()
         except (zipfile.BadZipFile, KeyError, ValueError, sqlite3.DatabaseError):
