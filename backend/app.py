@@ -12,14 +12,14 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError
-from fastapi import Depends, FastAPI, HTTPException, Request, Response, UploadFile
+from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from . import artifacts
+from . import admin_data, artifacts, catalog_io
 from . import db as database
 from . import models as m
 from .db import audit, now, setting, today, transaction
@@ -54,7 +54,7 @@ async def lifespan(app):
 
 app = FastAPI(
     title="Grupo Abogados D Honduras",
-    version="0.1.0",
+    version="0.1.2",
     docs_url=None,
     redoc_url=None,
     openapi_url=None,
@@ -138,6 +138,11 @@ def db_dependency(request: Request):
     database.REQUEST_GATE.acquire()
     db = None
     try:
+        require(
+            not database.MAINTENANCE,
+            "Datos trasladados. Cierre el servidor y abra Iniciar.cmd nuevamente",
+            503,
+        )
         if (
             request.cookies.get("gestor_session")
             and request.headers.get("x-passive-request") != "1"
@@ -1378,6 +1383,194 @@ def close_other_sessions(user: User, request: Request, db: DB):
     db.execute("DELETE FROM sessions WHERE token_hash<>?", (token_hash,))
     audit(db, user, "close_other_sessions", kind="session")
     return {"ok": True}
+
+
+@app.get("/api/catalogs/{kind}/template.xlsx")
+def catalog_template(kind: str, user: User, db: DB):
+    admin(user)
+    catalog_io.kind_valid(kind)
+    path = Path(__file__).with_name("templates") / (kind + ".xlsx")
+    require(path.is_file(), "Plantilla no disponible", 404)
+    return FileResponse(
+        path, filename=("Plantilla_Clientes.xlsx" if kind == "clients" else "Plantilla_Lotes.xlsx")
+    )
+
+
+@app.get("/api/entities/{entity}/catalogs/{kind}/export.xlsx")
+def catalog_export(entity: int, kind: str, user: User, db: DB, q: str = "", state: str = ""):
+    catalog_io.kind_valid(kind)
+    authorize(db, user, entity)
+    content = catalog_io.export_catalog(db, entity, kind, q, state)
+    audit(db, user, "export_" + kind, entity, kind="export", after={"search": q, "state": state})
+    return Response(
+        content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{kind}-{entity}.xlsx"'},
+    )
+
+
+@app.post("/api/entities/{entity}/catalogs/{kind}/import/preview")
+def import_preview(
+    entity: int,
+    kind: str,
+    file: UploadFile,
+    user: User,
+    db: DB,
+    mode: Annotated[str, Form()] = "create",
+    reason: Annotated[str, Form()] = "Importación de catálogo",
+):
+    admin(user)
+    catalog_io.kind_valid(kind)
+    authorize(db, user, entity, True)
+    require(3 <= len(reason.strip()) <= 2000, "Motivo de 3 a 2000 caracteres")
+    records = catalog_io.read_file(file.file.read(12_000_001), file.filename or "", kind)
+    changes, errors = catalog_io.plan_import(db, entity, kind, records, mode)
+    token = (
+        None
+        if errors
+        else admin_data.remember(
+            user,
+            {
+                "purpose": "import",
+                "entity": entity,
+                "kind": kind,
+                "changes": changes,
+                "reason": reason,
+                "fingerprint": catalog_io.fingerprint(db, entity, kind),
+            },
+        )
+    )
+    return {
+        "token": token,
+        "create": sum(r["operation"] == "create" for r in changes),
+        "update": sum(r["operation"] == "update" for r in changes),
+        "errors": errors[:100],
+        "error_count": len(errors),
+        "rows": changes[:100],
+        "total": len(records),
+    }
+
+
+@app.post("/api/catalogs/import/execute")
+def import_execute(data: m.PreviewConfirm, user: User, db: DB):
+    admin(user)
+    require(data.confirmation == "IMPORTAR", "Escriba IMPORTAR")
+    plan = admin_data.recalled(user, data.token, "import")
+    authorize(db, user, plan["entity"], True)
+    require(
+        plan["fingerprint"] == catalog_io.fingerprint(db, plan["entity"], plan["kind"]),
+        "El catálogo cambió; vuelva a obtener la vista previa",
+        409,
+    )
+    db.commit()
+    backup = artifacts.backup(user)
+    db.execute("BEGIN IMMEDIATE")
+    catalog_io.apply_import(db, user, plan["entity"], plan["kind"], plan["changes"], plan["reason"])
+    db.commit()
+    admin_data.PREVIEWS.pop(data.token, None)
+    return {"imported": len(plan["changes"]), "backup": backup.name}
+
+
+@app.get("/api/admin/database")
+def database_info(user: User, db: DB):
+    admin(user)
+    return {
+        "path": str(database.DATA),
+        "file": str(database.DATA / "gestor.sqlite3"),
+        "tables": admin_data.table_info(db),
+        "schema": db.execute("SELECT MAX(version) FROM schema_version").fetchone()[0],
+        "environment_override": bool(os.environ.get("GESTOR_DATA_DIR")),
+    }
+
+
+@app.get("/api/admin/database/export.sqlite3")
+def database_export(user: User, db: DB):
+    admin(user)
+    audit(db, user, "export_database", kind="database")
+    db.commit()
+    snapshot = sqlite3.connect(":memory:")
+    try:
+        db.backup(snapshot)
+        content = snapshot.serialize()
+    finally:
+        snapshot.close()
+    return Response(
+        content,
+        media_type="application/vnd.sqlite3",
+        headers={"Content-Disposition": 'attachment; filename="gestor.sqlite3"'},
+    )
+
+
+@app.post("/api/admin/database/sql/preview")
+def sql_preview(data: m.SQLStatement, user: User, db: DB):
+    admin(user)
+    result = admin_data.sql_operation(db, data.sql)
+    result["token"] = (
+        admin_data.remember(
+            user,
+            {
+                "purpose": "sql",
+                "sql": data.sql,
+                "reason": data.reason,
+                "tables": result["tables"],
+                "fingerprint": admin_data.state_hash(db, result["tables"]),
+                "writes": result["writes"],
+            },
+        )
+        if result["writes"]
+        else None
+    )
+    return result
+
+
+@app.post("/api/admin/database/sql/execute")
+def sql_execute(data: m.PreviewConfirm, user: User, db: DB):
+    admin(user)
+    require(data.confirmation == "EJECUTAR", "Escriba EJECUTAR")
+    plan = admin_data.recalled(user, data.token, "sql")
+    require(
+        plan["fingerprint"] == admin_data.state_hash(db, plan["tables"]),
+        "Los datos cambiaron; revise nuevamente la sentencia",
+        409,
+    )
+    db.commit()
+    backup = artifacts.backup(user)
+    db.execute("BEGIN IMMEDIATE")
+    result = admin_data.sql_operation(db, plan["sql"], dry_run=False)
+    audit(
+        db,
+        user,
+        "admin_sql",
+        kind="database",
+        reason=plan["reason"],
+        after={
+            "sql": plan["sql"],
+            "tables": result["tables"],
+            "changes": result["changes"],
+            "backup": backup.name,
+        },
+    )
+    db.commit()
+    admin_data.PREVIEWS.pop(data.token, None)
+    return {**result, "backup": backup.name}
+
+
+@app.post("/api/admin/database/location")
+def database_location(data: m.DataLocation, user: User, db: DB):
+    admin(user)
+    require(data.confirmation == "MOVER", "Escriba MOVER")
+    require(
+        db.execute(
+            "SELECT COUNT(*) FROM sessions WHERE last_seen>?",
+            ((datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat(),),
+        ).fetchone()[0]
+        == 1,
+        "Cierre las demás sesiones antes de mover los datos",
+        409,
+    )
+    db.commit()
+    backup = artifacts.backup(user)
+    return {**admin_data.relocate(db, user, data.path, data.reason), "backup": backup.name}
 
 
 STATIC = Path(__file__).resolve().parents[1] / "frontend" / "dist"

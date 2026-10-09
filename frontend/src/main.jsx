@@ -32,6 +32,7 @@ import { Contracts, Reservations } from "./contracts";
 import { Payments } from "./payments";
 import { Approvals, Arrears, Dashboard, Transactions } from "./reports";
 import { Settings } from "./settings";
+import { DatabasePanel } from "./data-tools";
 import "./style.css";
 
 const pages = {
@@ -81,6 +82,11 @@ const pages = {
   settings: [
     "Configuración",
     "Tasa de cambio, recibos y respaldos.",
+    Settings2,
+  ],
+  database: [
+    "Base de datos",
+    "Editor SQL, importaciones, exportaciones y ubicación de los datos.",
     Settings2,
   ],
 };
@@ -320,7 +326,7 @@ function App() {
           {admin && (
             <>
               <span className="nav-section">ADMINISTRACIÓN</span>
-              {["entities", "users", "settings"].map((key) => {
+              {["entities", "users", "settings", "database"].map((key) => {
                 const Icon = pages[key][2];
                 return (
                   <button
@@ -505,6 +511,12 @@ function App() {
               {["clients", "lots", "entities"].includes(screen) && (
                 <Catalog {...common} kind={screen} />
               )}
+              {screen === "database" && admin && (
+                <DatabasePanel
+                  {...common}
+                  onRestore={() => navigate("settings")}
+                />
+              )}
               {screen === "users" && (
                 <UserScreen {...common} entities={entities} />
               )}
@@ -532,7 +544,7 @@ function App() {
         </main>
         <footer>
           Grupo Abogados D Honduras{" "}
-          <span>Gestión de lotificadoras · v0.1.1</span>
+          <span>Gestión de lotificadoras · v0.1.2</span>
         </footer>
       </div>
       {password && (

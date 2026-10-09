@@ -7,12 +7,26 @@ from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-DATA = Path(
-    os.environ.get(
-        "GESTOR_DATA_DIR",
-        str(Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "GrupoAbogados_D_Honduras"),
-    )
-).resolve()
+LOCAL = Path(os.environ.get("LOCALAPPDATA", str(Path.home())))
+LOCATION_CONFIG = LOCAL / "GrupoAbogados_D_Honduras-location.json"
+
+
+def configured_data():
+    if os.environ.get("GESTOR_DATA_DIR"):
+        return Path(os.environ["GESTOR_DATA_DIR"]).resolve()
+    if LOCATION_CONFIG.is_file():
+        config = json.loads(LOCATION_CONFIG.read_text(encoding="utf-8"))
+        location = Path(config["data_dir"])
+        if not location.is_absolute() or not (location / "gestor.sqlite3").is_file():
+            raise ValueError(
+                "Ubicación de datos inválida; revise GrupoAbogados_D_Honduras-location.json"
+            )
+        return location.resolve()
+    return (LOCAL / "GrupoAbogados_D_Honduras").resolve()
+
+
+DATA = configured_data()
+MAINTENANCE = False
 LOCK = threading.RLock()
 REQUEST_GATE = threading.Lock()
 

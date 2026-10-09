@@ -67,7 +67,7 @@ def main():
         encoding="utf-8",
     )
     manifest = {
-        "version": "0.1.1",
+        "version": "0.1.2",
         "python_zip_sha256": hashlib.sha256(args.python_zip.read_bytes()).hexdigest(),
         "files": {
             p.relative_to(bundle).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
@@ -77,7 +77,7 @@ def main():
     }
     (bundle / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     archive = shutil.make_archive(
-        str(release / "GrupoAbogados_D_Honduras-Windows-v0.1.1"), "zip", release, bundle.name
+        str(release / "GrupoAbogados_D_Honduras-Windows-v0.1.2"), "zip", release, bundle.name
     )
     print(archive)
 

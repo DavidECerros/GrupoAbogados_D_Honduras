@@ -1451,3 +1451,9 @@ pre {
     grid-template-columns: 1fr;
   }
 }
+/* Database maintenance and import controls. */
+.sql-editor {
+  font-family: Consolas, monospace;
+  width: 100%;
+  min-height: 150px;
+}

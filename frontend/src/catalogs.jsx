@@ -1,5 +1,14 @@
 import { useState } from "react";
-import { Edit3, Plus, Trash2, Upload, UserX, UserCheck } from "lucide-react";
+import {
+  Edit3,
+  Plus,
+  Trash2,
+  Upload,
+  UserX,
+  UserCheck,
+  Download,
+} from "lucide-react";
+import { CatalogImport } from "./data-tools";
 import { api, money } from "./api";
 import {
   Badge,
@@ -21,6 +30,7 @@ export function Catalog({ kind, entity, admin, refresh, version, notify }) {
     [editing, setEditing] = useState(null),
     [changingStatus, setChangingStatus] = useState(null),
     [statusReason, setStatusReason] = useState(""),
+    [importing, setImporting] = useState(false),
     [deleting, setDeleting] = useState(null);
   const global = kind === "entities";
   const path = global
@@ -196,6 +206,27 @@ export function Catalog({ kind, entity, admin, refresh, version, notify }) {
             <option value="sold">Vendido</option>
           </select>
         )}
+        {!global && (
+          <a
+            className="secondary"
+            href={`/api/entities/${entity}/catalogs/${kind}/export.xlsx?q=${encodeURIComponent(q)}&state=${state}`}
+          >
+            <Download size={16} /> Exportar Excel
+          </a>
+        )}
+        {!global && admin && (
+          <>
+            <a
+              className="secondary"
+              href={`/api/catalogs/${kind}/template.xlsx`}
+            >
+              <Download size={16} /> Plantilla
+            </a>
+            <button className="secondary" onClick={() => setImporting(true)}>
+              <Upload size={16} /> Importar
+            </button>
+          </>
+        )}
         {(isClient || admin) && (
           <button className="primary" onClick={() => setEditing({})}>
             <Plus size={17} /> Nuevo {title}
@@ -217,6 +248,20 @@ export function Catalog({ kind, entity, admin, refresh, version, notify }) {
         />
         {!global && <Pager total={total} page={page} onChange={setPage} />}
       </div>
+      {importing && (
+        <CatalogImport
+          kind={kind}
+          entity={entity}
+          onClose={() => setImporting(false)}
+          onSaved={(result) => {
+            setImporting(false);
+            refresh();
+            notify(
+              `${result.imported} registros importados. Respaldo: ${result.backup}`,
+            );
+          }}
+        />
+      )}
       {changingStatus && (
         <Modal
           title={

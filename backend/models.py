@@ -60,6 +60,22 @@ class ClientStatus(Model):
     reason: str = Field(min_length=3, max_length=2000)
 
 
+class SQLStatement(Model):
+    sql: str = Field(min_length=1, max_length=20000)
+    reason: str = Field(min_length=3, max_length=2000)
+
+
+class PreviewConfirm(Model):
+    token: str = Field(min_length=20, max_length=100)
+    confirmation: str
+
+
+class DataLocation(Model):
+    path: str = Field(min_length=3, max_length=1000)
+    reason: str = Field(min_length=3, max_length=2000)
+    confirmation: str
+
+
 class Lot(Model):
     code: str = Field(min_length=1, max_length=80)
     description: str = Field(max_length=2000, default="")

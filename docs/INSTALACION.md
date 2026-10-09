@@ -2,7 +2,7 @@
 
 ## Paquete local de Windows
 
-1. Copie el ZIP `GrupoAbogados_D_Honduras-Windows-v0.1.1.zip` al equipo principal.
+1. Copie el ZIP `GrupoAbogados_D_Honduras-Windows-v0.1.2.zip` al equipo principal.
 2. Extraiga todos sus archivos a una carpeta local, por ejemplo `C:\GrupoAbogados`.
 3. Abra `Iniciar.cmd`. Mantenga abierta la ventana del servidor durante el trabajo.
 4. Entre a `http://localhost:8000`. En el primer inicio cree su superusuario con
@@ -25,7 +25,7 @@ SQLite debe permanecer en el disco del equipo principal. No coloque la base en
 una carpeta de red ni permita acceso directo desde equipos clientes.
 
 Actualización: cierre el servidor, haga respaldo, conserve la carpeta de datos y
-reemplace solo la carpeta del programa. La versión 0.1.1 migra automáticamente
+reemplace solo la carpeta del programa. La versión 0.1.2 migra automáticamente
 el esquema 1 al 2 al iniciar: agrega el estado del cliente y conserva los registros.
 También permite restaurar respaldos anteriores y migrarlos al esquema actual.
 
