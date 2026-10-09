@@ -1,0 +1,14 @@
+.venv/
+node_modules/
+frontend/dist/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.sqlite*
+*.db*
+.env
+data/
+wheelhouse/
+release/
+qa/
+*.log
