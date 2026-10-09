@@ -1,0 +1,73 @@
+{
+  "date": "2026-10-08",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "machine": "AMD64",
+  "python": "3.13.3",
+  "scenario": {
+    "lots": 10000,
+    "payments": 100000,
+    "sessions": 5
+  },
+  "queries": {
+    "/api/entities/1/clients?page=100": {
+      "ms": [
+        41.08,
+        71.74,
+        146.2,
+        178.65,
+        104.31
+      ],
+      "max_ms": 178.65
+    },
+    "/api/entities/1/payments?page=100": {
+      "ms": [
+        111.37,
+        60.66,
+        199.1,
+        156.44,
+        244.47
+      ],
+      "max_ms": 244.47
+    },
+    "/api/entities/1/contracts?page=100": {
+      "ms": [
+        242.06,
+        120.13,
+        358.87,
+        476.99,
+        570.75
+      ],
+      "max_ms": 570.75
+    },
+    "/api/entities/1/arrears?page=100": {
+      "ms": [
+        268.93,
+        517.18,
+        1600.66,
+        894.81,
+        1217.84
+      ],
+      "max_ms": 1600.66
+    },
+    "/api/dashboard?entity=1": {
+      "ms": [
+        425.78,
+        898.51,
+        1253.6,
+        1592.89,
+        1917.55
+      ],
+      "max_ms": 1917.55
+    }
+  },
+  "payment_including_pdf_ms": [
+    126.45,
+    69.42,
+    384.24,
+    327.42,
+    211.04
+  ],
+  "backend_resident_mb_before": 80.25,
+  "backend_resident_mb_after": 87.46,
+  "note": "Equipo anfitri\u00f3n actual; no equivale a validaci\u00f3n en Windows 10 con 4 GB RAM y SSD."
+}

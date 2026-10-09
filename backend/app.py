@@ -13,8 +13,10 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, UploadFile
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import ValidationError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import artifacts
@@ -92,6 +94,26 @@ async def integrity_error(request, exc):
     )
 
 
+@app.exception_handler(RequestValidationError)
+async def request_invalid(request, exc):
+    return JSONResponse(
+        {
+            "detail": "; ".join(
+                f"{'.'.join(str(x) for x in error['loc'])}: {error['msg']}"
+                for error in exc.errors()
+            )
+        },
+        status_code=422,
+    )
+
+
+@app.exception_handler(ValidationError)
+async def action_invalid(request, exc):
+    return JSONResponse(
+        {"detail": "Los datos de la solicitud de autorización no son válidos"}, status_code=422
+    )
+
+
 @app.exception_handler(sqlite3.OperationalError)
 async def database_error(request, exc):
     return JSONResponse(
@@ -112,12 +134,42 @@ async def internal_error(request, exc):
     )
 
 
-def db_dependency():
-    with transaction() as db:
+def db_dependency(request: Request):
+    database.REQUEST_GATE.acquire()
+    db = None
+    try:
+        if (
+            request.cookies.get("gestor_session")
+            and request.headers.get("x-passive-request") != "1"
+        ):
+            probe = database.connect()
+            try:
+                token_hash = hashlib.sha256(request.cookies["gestor_session"].encode()).hexdigest()
+                valid = probe.execute(
+                    "SELECT s.last_seen FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND u.active=1",
+                    (token_hash,),
+                ).fetchone()
+            finally:
+                probe.close()
+            if valid and datetime.fromisoformat(valid["last_seen"]) > datetime.now(
+                timezone.utc
+            ) - timedelta(minutes=30):
+                artifacts.backup(daily=True)
+        db = database.connect()
+        db.execute("BEGIN IMMEDIATE")
         yield db
+        db.commit()
+    except BaseException:
+        if db is not None:
+            db.rollback()
+        raise
+    finally:
+        if db is not None:
+            db.close()
+        database.REQUEST_GATE.release()
 
 
-DB = Annotated[sqlite3.Connection, Depends(db_dependency)]
+DB = Annotated[sqlite3.Connection, Depends(db_dependency, scope="function")]
 
 
 def authenticated(request: Request, db: DB):
@@ -159,11 +211,12 @@ def authenticated(request: Request, db: DB):
             "Debe cambiar su contraseña",
             403,
         )
-    db.execute("UPDATE sessions SET last_seen=? WHERE token_hash=?", (now(), token_hash))
+    if request.method != "GET" or request.headers.get("x-passive-request") != "1":
+        db.execute("UPDATE sessions SET last_seen=? WHERE token_hash=?", (now(), token_hash))
     return user
 
 
-User = Annotated[dict, Depends(authenticated)]
+User = Annotated[dict, Depends(authenticated, scope="function")]
 
 
 def public_user(db, user):
@@ -276,7 +329,11 @@ def login(data: m.Login, request: Request, response: Response, db: DB):
     response.set_cookie(
         "gestor_session", token, httponly=True, secure=SECURE, samesite="strict", path="/"
     )
-    return {"user": public_user(db, row(db, "users", user["id"])), "csrf": csrf}
+    return {
+        "user": public_user(db, row(db, "users", user["id"])),
+        "csrf": csrf,
+        "today": str(today(db)),
+    }
 
 
 @app.get("/api/auth/me")
@@ -392,7 +449,7 @@ def create_entity(data: m.Entity, user: User, db: DB):
         "INSERT INTO entities(name,currency,status) VALUES(?,?,?)",
         (data.name, data.currency, data.status),
     ).lastrowid
-    audit(db, user, "create_entity", identifier, "entity", identifier, after=data.model_dump())
+    audit(db, user, "create_entity", None, "entity", identifier, after=data.model_dump())
     return row(db, "entities", identifier)
 
 
@@ -408,7 +465,7 @@ def update_entity(identifier: int, data: m.Entity, user: User, db: DB):
         db,
         user,
         "update_entity",
-        identifier,
+        None,
         "entity",
         identifier,
         before=previous,
@@ -445,13 +502,13 @@ def logo(identifier: int, file: UploadFile, user: User, db: DB):
         image = Image.open(io.BytesIO(payload))
         require(image.width * image.height <= 10_000_000, "Logo demasiado grande")
         image.thumbnail((600, 600))
-        relative = f"logos/{identifier}.png"
+        relative = f"logos/{identifier}-{hashlib.sha256(payload).hexdigest()[:16]}.png"
         (database.DATA / "logos").mkdir(exist_ok=True)
         image.convert("RGBA").save(database.DATA / relative, "PNG")
     except (OSError, Image.DecompressionBombError):
         raise HTTPException(422, "Imagen inválida")
     db.execute("UPDATE entities SET logo=? WHERE id=?", (relative, identifier))
-    audit(db, user, "update_logo", identifier, "entity", identifier)
+    audit(db, user, "update_logo", None, "entity", identifier)
     return {"ok": True}
 
 
@@ -707,6 +764,7 @@ def pay(data: m.Payment, user: User, db: DB):
     try:
         db.execute("BEGIN IMMEDIATE")
         artifacts.generate_receipt(db, result["receipt_id"])
+        db.commit()
         result = payment_result(db, result["id"])
     except Exception:
         db.rollback()
@@ -717,7 +775,25 @@ def pay(data: m.Payment, user: User, db: DB):
 @app.post("/api/payments/{identifier}/void")
 def void(identifier: int, data: m.Reason, user: User, db: DB):
     void_payment(db, user, identifier, data.reason)
-    return {"ok": True}
+    return finish_void_receipt(db, identifier)
+
+
+def finish_void_receipt(db, payment_id):
+    receipt_id = db.execute("SELECT id FROM receipts WHERE payment_id=?", (payment_id,)).fetchone()[
+        0
+    ]
+    db.commit()
+    try:
+        db.execute("BEGIN IMMEDIATE")
+        artifacts.generate_receipt(db, receipt_id)
+        db.commit()
+        return {"ok": True}
+    except Exception:
+        db.rollback()
+        return {
+            "ok": True,
+            "receipt_warning": "Anulación confirmada. Regenere el PDF anulado desde la descarga del recibo.",
+        }
 
 
 def receipt_permission(db, user, identifier):
@@ -737,7 +813,11 @@ def pdf(identifier: int, user: User, db: DB):
     receipt = receipt_permission(db, user, identifier)
     path = artifacts.generate_receipt(db, identifier)
     audit(db, user, "download_receipt", receipt["entity_id"], "receipt", identifier)
-    return FileResponse(path, media_type="application/pdf", filename=f"{receipt['folio']}.pdf")
+    return Response(
+        path.read_bytes(),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{receipt["folio"]}.pdf"'},
+    )
 
 
 @app.post("/api/receipts/{identifier}/regenerate")
@@ -761,34 +841,28 @@ def payments(
 ):
     authorize(db, user, entity)
     limit, offset = pagination(page, size)
-    where = "p.entity_id=? AND (? IS NULL OR p.payment_date>=?) AND (? IS NULL OR p.payment_date<=?) AND (?='' OR p.status=?)"
-    args = [
-        entity,
-        str(since) if since else None,
-        str(since) if since else None,
-        str(until) if until else None,
-        str(until) if until else None,
-        state,
-        state,
-    ]
+    where = "entity_id=?"
+    args = [entity]
+    for field, value, operator in [
+        ("payment_date", str(since) if since else None, ">="),
+        ("payment_date", str(until) if until else None, "<="),
+        ("status", state, "="),
+    ]:
+        if value:
+            where += f" AND {field}{operator}?"
+            args.append(value)
     if user["role"] != "superuser":
-        where += " AND p.created_by=?"
+        where += " AND created_by=?"
         args.append(user["id"])
-    base = (
-        "FROM payments p JOIN clients cl ON cl.id=p.client_id JOIN contracts c ON c.id=p.contract_id JOIN lots l ON l.id=c.lot_id JOIN receipts r ON r.payment_id=p.id JOIN users u ON u.id=p.created_by WHERE "
-        + where
+    selected = "SELECT * FROM payments WHERE " + where + " ORDER BY id DESC LIMIT ? OFFSET ?"
+    sql = (
+        "SELECT p.*,cl.name client,l.code lot,u.full_name operator,r.id receipt_id,r.folio,r.status receipt_status FROM ("
+        + selected
+        + ") p JOIN clients cl ON cl.id=p.client_id JOIN contracts c ON c.id=p.contract_id JOIN lots l ON l.id=c.lot_id JOIN receipts r ON r.payment_id=p.id JOIN users u ON u.id=p.created_by ORDER BY p.id DESC"
     )
     return {
-        "items": [
-            dict(r)
-            for r in db.execute(
-                "SELECT p.*,cl.name client,l.code lot,u.full_name operator,r.id receipt_id,r.folio,r.status receipt_status "
-                + base
-                + " ORDER BY p.id DESC LIMIT ? OFFSET ?",
-                (*args, limit, offset),
-            )
-        ],
-        "total": db.execute("SELECT COUNT(*) " + base, args).fetchone()[0],
+        "items": [dict(r) for r in db.execute(sql, (*args, limit, offset))],
+        "total": db.execute("SELECT COUNT(*) FROM payments WHERE " + where, args).fetchone()[0],
     }
 
 
@@ -802,10 +876,11 @@ def mora(
     due_to: date | None = None,
     page: int = 1,
     size: int = 30,
+    q: str = "",
 ):
     authorize(db, user, entity)
     limit, offset = pagination(page, size)
-    records = arrears(db, entity, client_id, due_from, due_to)
+    records = arrears(db, entity, client_id, due_from, due_to, q)
     totals = {
         currency: sum(r["overdue"] for r in records if r["currency"] == currency)
         for currency in ("HNL", "USD")
@@ -836,52 +911,49 @@ def dashboard(user: User, db: DB, entity: int | None = None, month: str = ""):
             "SELECT status,COUNT(*) count FROM lots WHERE 1=1" + where + " GROUP BY status", args
         )
     }
-    totals = [
-        dict(r)
-        for r in db.execute(
-            "SELECT received_currency currency,SUM(received) amount FROM payments WHERE status='valid' AND substr(payment_date,1,7)=?"
-            + where
-            + " GROUP BY received_currency",
-            [month, *args],
-        )
-    ]
-    chart = []
+    months = []
     for delta in range(5, -1, -1):
         index = start.year * 12 + start.month - 1 - delta
         year, zero_month = divmod(index, 12)
         key = f"{year:04}-{zero_month + 1:02}"
-        amounts = {
-            r["received_currency"]: r["amount"]
-            for r in db.execute(
-                "SELECT received_currency,SUM(received) amount FROM payments WHERE status='valid' AND substr(payment_date,1,7)=?"
-                + where
-                + " GROUP BY received_currency",
-                [key, *args],
-            )
-        }
-        chart.append(
-            {"month": key, **{currency: amounts.get(currency, 0) for currency in ("HNL", "USD")}}
+        months.append(key)
+    aggregates = [
+        dict(r)
+        for r in db.execute(
+            "SELECT substr(payment_date,1,7) month,received_currency currency,SUM(received) amount FROM payments WHERE status='valid' AND payment_date>=? AND payment_date<=?"
+            + where
+            + " GROUP BY substr(payment_date,1,7),received_currency",
+            [months[0] + "-01", month + "-31", *args],
         )
-    debt = arrears(db, entity)
-    grouped = {}
-    for item in debt:
-        key = (item["entity_id"], item["client_id"], item["currency"])
-        grouped.setdefault(
-            key,
-            {
-                "entity": item["entity"],
-                "client": item["client"],
-                "currency": item["currency"],
-                "overdue": 0,
+    ]
+    totals = [
+        {"currency": r["currency"], "amount": r["amount"]}
+        for r in aggregates
+        if r["month"] == month
+    ]
+    chart = [
+        {
+            "month": key,
+            **{
+                currency: sum(
+                    r["amount"]
+                    for r in aggregates
+                    if r["month"] == key and r["currency"] == currency
+                )
+                for currency in ("HNL", "USD")
             },
-        )["overdue"] += item["overdue"]
-    top = {
-        currency: sorted(
-            [r for r in grouped.values() if r["currency"] == currency and r["overdue"]],
-            key=lambda r: -r["overdue"],
-        )[:5]
-        for currency in ("HNL", "USD")
-    }
+        }
+        for key in months
+    ]
+    top = {}
+    for currency in ("HNL", "USD"):
+        sql = "SELECT e.name entity,cl.name client,c.currency,SUM(o.amount-o.paid) overdue FROM contracts c JOIN obligations o ON o.contract_id=c.id JOIN clients cl ON cl.id=c.client_id JOIN entities e ON e.id=c.entity_id WHERE c.status='active' AND c.currency=? AND o.due_date<? AND o.amount>o.paid"
+        params = [currency, str(today(db))]
+        if entity:
+            sql += " AND c.entity_id=?"
+            params.append(entity)
+        sql += " GROUP BY c.entity_id,c.client_id,c.currency ORDER BY overdue DESC LIMIT 5"
+        top[currency] = [dict(r) for r in db.execute(sql, params)]
     return {
         "lots": lots,
         "collection": totals,
@@ -894,6 +966,7 @@ def dashboard(user: User, db: DB, entity: int | None = None, month: str = ""):
 @app.post("/api/entities/{entity}/approvals")
 def request_approval(entity: int, data: m.Approval, user: User, db: DB):
     authorize(db, user, entity, True)
+    require("reason" not in data.payload, "El motivo debe enviarse por separado")
     table = {
         "void_payment": "payments",
         "release_reservation": "reservations",
@@ -994,7 +1067,10 @@ def resolve(identifier: int, data: m.Decision, user: User, db: DB):
         data.reason,
         after={"approved": data.approve},
     )
-    return row(db, "approvals", identifier)
+    result = row(db, "approvals", identifier)
+    if data.approve and approval["action"] == "void_payment":
+        result.update(finish_void_receipt(db, approval["record_id"]))
+    return result
 
 
 def history_query(user, entity, user_id, since, until, action, state):
@@ -1231,6 +1307,42 @@ def restore_backup(file: UploadFile, user: User, request: Request, db: DB):
         content = file.file.read(500_000_001)
         require(len(content) <= 500_000_000, "Respaldo máximo 500 MB")
         return artifacts.restore(content, user)
+
+
+@app.get("/api/exchange-rate")
+def exchange_rate(user: User, db: DB):
+    return {"exchange_rate": setting(db, "exchange_rate")}
+
+
+@app.get("/api/alerts")
+def alerts(user: User, db: DB):
+    allowed = entities(user, db)
+    result = []
+    for entity in allowed:
+        debt = arrears(db, entity["id"])
+        expired = db.execute(
+            "SELECT COUNT(*) FROM reservations WHERE entity_id=? AND status='active' AND expires_on<?",
+            (entity["id"], str(today(db))),
+        ).fetchone()[0]
+        result.append(
+            {
+                "entity_id": entity["id"],
+                "entity": entity["name"],
+                "overdue_count": sum(r["color"] == "red" for r in debt),
+                "upcoming_count": sum(r["color"] == "yellow" for r in debt),
+                "expired_reservations": expired,
+            }
+        )
+    return {"items": result, "today": str(today(db))}
+
+
+@app.post("/api/auth/close-other-sessions")
+def close_other_sessions(user: User, request: Request, db: DB):
+    admin(user)
+    token_hash = hashlib.sha256(request.cookies["gestor_session"].encode()).hexdigest()
+    db.execute("DELETE FROM sessions WHERE token_hash<>?", (token_hash,))
+    audit(db, user, "close_other_sessions", kind="session")
+    return {"ok": True}
 
 
 STATIC = Path(__file__).resolve().parents[1] / "frontend" / "dist"

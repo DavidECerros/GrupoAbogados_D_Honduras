@@ -51,7 +51,10 @@ def generate_receipt(db, identifier):
         Paragraph("Recibo de cobro · No es factura fiscal", styles["Normal"]),
         Spacer(1, 12),
     ]
-    money = lambda value, currency: f"{currency} {value / 100:,.2f}"
+
+    def money(value, currency):
+        return f"{currency} {value / 100:,.2f}"
+
     fields = [
         ("Entidad ID", str(snap["entity_id"])),
         ("Cliente", snap["client"]),
@@ -60,7 +63,10 @@ def generate_receipt(db, identifier):
         ("Importe recibido", money(snap["received"], snap["received_currency"])),
         ("Aplicado al contrato", money(snap["applied"], snap["contract_currency"])),
         ("Tasa HNL por USD", snap["rate"] or "No aplica"),
-        ("Método / comprobante", f"{snap['method']} / {snap['bank_reference'] or '-'}"),
+        (
+            "Método / comprobante",
+            f"{ {'cash': 'Efectivo', 'deposit': 'Depósito', 'transfer': 'Transferencia'}.get(snap['method'], snap['method']) } / {snap['bank_reference'] or '-'}",
+        ),
         ("Responsable", snap["operator"]),
         ("Saldo posterior al cobro", money(snap["balance_after"], snap["contract_currency"])),
     ]
@@ -164,10 +170,7 @@ def backup(user=None, daily=False):
                 manifest = {
                     "version": 1,
                     "created_at": now(),
-                    "files": {
-                        name: hashlib.sha256(path.read_bytes()).hexdigest()
-                        for name, path in files.items()
-                    },
+                    "files": {name: file_digest(path) for name, path in files.items()},
                 }
                 pending = target.with_suffix(".tmp")
                 with zipfile.ZipFile(pending, "w", zipfile.ZIP_DEFLATED) as archive:
@@ -190,6 +193,11 @@ def backup(user=None, daily=False):
             return target
         finally:
             db.close()
+
+
+def file_digest(path):
+    with path.open("rb") as file:
+        return hashlib.file_digest(file, "sha256").hexdigest()
 
 
 def restore(content, user):
@@ -256,18 +264,42 @@ def restore(content, user):
         previous = backup(user)
         current = database.connect()
         replacement = sqlite3.connect(staged / "gestor.sqlite3")
+        rollback_db = sqlite3.connect(staged / "before.sqlite3")
+        old_folders = []
+        new_folders = []
         try:
+            current.backup(rollback_db)
+            for folder in ("recibos", "logos"):
+                target = database.DATA / folder
+                if target.exists():
+                    os.replace(target, staged / ("before-" + folder))
+                    old_folders.append(folder)
             replacement.backup(current)
+            for folder in ("recibos", "logos"):
+                if (staged / folder).exists():
+                    os.replace(staged / folder, database.DATA / folder)
+                    new_folders.append(folder)
+        except (OSError, sqlite3.DatabaseError):
+            rollback_db.backup(current)
+            for folder in new_folders:
+                target = database.DATA / folder
+                if target.exists():
+                    shutil.rmtree(target)
+            for folder in old_folders:
+                os.replace(staged / ("before-" + folder), database.DATA / folder)
+            audit(
+                current,
+                user,
+                "restore_failed",
+                kind="backup",
+                reason="No se pudo completar el reemplazo; se revirtió al estado previo",
+                result="failed",
+            )
+            raise
         finally:
             current.close()
             replacement.close()
-        for folder in ("recibos", "logos"):
-            target = database.DATA / folder
-            if target.exists():
-                # Fixed folder underneath the verified application data directory.
-                shutil.rmtree(target)
-            if (staged / folder).exists():
-                shutil.copytree(staged / folder, target)
+            rollback_db.close()
         with database.transaction() as db:
             db.execute("DELETE FROM sessions")
             restored_user = dict(

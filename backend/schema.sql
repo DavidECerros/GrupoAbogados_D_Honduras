@@ -29,5 +29,8 @@ CREATE TRIGGER IF NOT EXISTS audit_no_delete BEFORE DELETE ON audit BEGIN SELECT
 CREATE INDEX IF NOT EXISTS clients_entity ON clients(entity_id,name);
 CREATE INDEX IF NOT EXISTS obligations_due ON obligations(due_date,contract_id);
 CREATE INDEX IF NOT EXISTS payments_entity_date ON payments(entity_id,payment_date);
+CREATE INDEX IF NOT EXISTS payments_entity_id ON payments(entity_id,id DESC);
+CREATE INDEX IF NOT EXISTS payments_creator_entity_id ON payments(created_by,entity_id,id DESC);
+CREATE INDEX IF NOT EXISTS payments_net_month ON payments(status,payment_date,entity_id,received_currency);
 CREATE INDEX IF NOT EXISTS audit_user_date ON audit(user_id,created_at);
 CREATE INDEX IF NOT EXISTS contracts_entity ON contracts(entity_id,client_id);

@@ -14,6 +14,7 @@ DATA = Path(
     )
 ).resolve()
 LOCK = threading.RLock()
+REQUEST_GATE = threading.Lock()
 
 
 def now():
@@ -22,7 +23,9 @@ def now():
 
 def connect():
     DATA.mkdir(parents=True, exist_ok=True)
-    db = sqlite3.connect(DATA / "gestor.sqlite3", timeout=5, isolation_level=None)
+    db = sqlite3.connect(
+        DATA / "gestor.sqlite3", timeout=5, isolation_level=None, check_same_thread=False
+    )
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA foreign_keys=ON")
     db.execute("PRAGMA busy_timeout=5000")

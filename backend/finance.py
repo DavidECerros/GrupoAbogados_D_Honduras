@@ -44,22 +44,26 @@ def admin(user):
     require(user["role"] == "superuser", "Se requiere superusuario", 403)
 
 
-def schedule(db, contract, price, down, count, down_due, first_due):
+def schedule(
+    db, contract, price, down, count, down_due, first_due, include_down=True, start_number=1
+):
     require(down <= price, "La prima no puede exceder el precio")
-    db.execute(
-        "INSERT INTO obligations(contract_id,number,due_date,amount) VALUES(?,?,?,?)",
-        (contract, 0, str(down_due), down),
-    )
+    if include_down:
+        db.execute(
+            "INSERT INTO obligations(contract_id,number,due_date,amount) VALUES(?,?,?,?)",
+            (contract, 0, str(down_due), down),
+        )
     base = (price - down) // count
     for index in range(count):
         month_index = first_due.year * 12 + first_due.month - 1 + index
         year, month = divmod(month_index, 12)
+        require(year <= 9999, "El calendario de cuotas excede las fechas permitidas")
         month += 1
         due = date(year, month, min(first_due.day, calendar.monthrange(year, month)[1]))
         amount = base if index < count - 1 else price - down - base * (count - 1)
         db.execute(
             "INSERT INTO obligations(contract_id,number,due_date,amount) VALUES(?,?,?,?)",
-            (contract, index + 1, due.isoformat(), amount),
+            (contract, index + start_number, due.isoformat(), amount),
         )
 
 
@@ -373,21 +377,52 @@ def amend_contract(db, user, identifier, data):
     admin(user)
     contract = row(db, "contracts", identifier)
     authorize(db, user, contract["entity_id"], True)
-    # Existing applications must remain intact. Until a re-amortization model is agreed,
-    # only contracts without any payment history may have financial terms changed.
-    require(
-        not db.execute("SELECT 1 FROM payments WHERE contract_id=?", (identifier,)).fetchone(),
-        "Un contrato con historial de pagos conserva sus condiciones financieras",
-        409,
-    )
     price, down = cents(data.price), cents(data.down_payment)
     require(down <= price, "Prima mayor que el precio")
+    obligations = [
+        dict(r)
+        for r in db.execute(
+            "SELECT * FROM obligations WHERE contract_id=? ORDER BY number", (identifier,)
+        )
+    ]
+    paid = sum(r["paid"] for r in obligations)
+    paid_down = obligations[0]["paid"]
+    require(price >= paid, "El precio no puede ser menor que los pagos válidos aplicados")
+    require(down >= paid_down, "La prima no puede ser menor que su importe ya pagado")
+    pending_down = down - paid_down
+    financed = price - paid - pending_down
+    require(financed >= 0, "Las condiciones propuestas no cubren los importes ya pagados")
+    previous = {**contract, "obligations": obligations}
     db.execute(
         "INSERT INTO contract_versions(contract_id,version,snapshot,reason,created_by,created_at) VALUES(?,?,?,?,?,?)",
-        (identifier, contract["version"], json.dumps(contract), data.reason, user["id"], now()),
+        (identifier, contract["version"], json.dumps(previous), data.reason, user["id"], now()),
     )
-    db.execute("DELETE FROM obligations WHERE contract_id=?", (identifier,))
-    schedule(db, identifier, price, down, data.installments, data.down_due, data.first_due)
+    has_history = db.execute("SELECT 1 FROM payments WHERE contract_id=?", (identifier,)).fetchone()
+    if not has_history:
+        db.execute("DELETE FROM obligations WHERE contract_id=?", (identifier,))
+        schedule(db, identifier, price, down, data.installments, data.down_due, data.first_due)
+    else:
+        # Preserve IDs and applications for later reversals. Retire old pending amounts,
+        # retain the paid portions, and schedule only the newly agreed remaining balance.
+        db.execute(
+            "UPDATE obligations SET amount=paid WHERE contract_id=? AND number<>0", (identifier,)
+        )
+        db.execute(
+            "UPDATE obligations SET amount=?,due_date=? WHERE contract_id=? AND number=0",
+            (down, str(data.down_due), identifier),
+        )
+        first_number = max(r["number"] for r in obligations) + 1
+        schedule(
+            db,
+            identifier,
+            financed,
+            0,
+            data.installments,
+            data.down_due,
+            data.first_due,
+            include_down=False,
+            start_number=first_number,
+        )
     db.execute(
         "UPDATE contracts SET price=?,down_payment=?,installments=?,down_due=?,first_due=?,version=version+1 WHERE id=?",
         (price, down, data.installments, str(data.down_due), str(data.first_due), identifier),
@@ -405,7 +440,7 @@ def amend_contract(db, user, identifier, data):
     )
 
 
-def arrears(db, entity=None, client=None, due_from=None, due_to=None):
+def arrears(db, entity=None, client=None, due_from=None, due_to=None, q=""):
     current = today(db)
     sql = """SELECT c.id contract_id,c.entity_id,e.name entity,c.client_id,cl.name client,l.code lot,c.currency,
     SUM(o.amount-o.paid) balance,
@@ -420,6 +455,9 @@ def arrears(db, entity=None, client=None, due_from=None, due_to=None):
     if client:
         sql += " AND c.client_id=?"
         args.append(client)
+    if q:
+        sql += " AND (cl.name LIKE ? OR cl.document LIKE ? OR l.code LIKE ?)"
+        args.extend([f"%{q}%"] * 3)
     sql += " GROUP BY c.id"
     results = []
     for r in db.execute(sql, args):
