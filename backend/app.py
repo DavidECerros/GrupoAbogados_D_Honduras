@@ -54,7 +54,7 @@ async def lifespan(app):
 
 app = FastAPI(
     title="Grupo Abogados D Honduras",
-    version="0.1.2",
+    version="0.1.3",
     docs_url=None,
     redoc_url=None,
     openapi_url=None,
@@ -249,7 +249,7 @@ def public_user(db, user):
 def status(db: DB):
     return {
         "initialized": bool(db.execute("SELECT 1 FROM users WHERE role='superuser'").fetchone()),
-        "version": "0.1.0",
+        "version": app.version,
     }
 
 

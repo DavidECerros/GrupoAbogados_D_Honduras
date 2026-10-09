@@ -57,7 +57,8 @@ SQLite aislada no sustituye al ZIP cuando necesita conservar sus documentos.
 
 **Mover carpeta de datos** copia base, logos, recibos y respaldos a una carpeta
 vacía en un disco local del equipo principal. Cierre las demás sesiones antes.
-Tras el traslado el sistema se pausa: termine el servidor con Ctrl+C y abra
+Tras el traslado el sistema se pausa: termine el servidor con `Detener.cmd`
+(o Ctrl+C en modo consola) y abra
 Iniciar.cmd de la versión actual nuevamente. La carpeta original se conserva,
 pero deja de recibir operaciones. Use siempre la carpeta nueva para respaldar.
 

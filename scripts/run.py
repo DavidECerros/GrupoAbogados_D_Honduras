@@ -21,6 +21,7 @@ def main():
     parser.add_argument("--key")
     parser.add_argument("--allowed-hosts")
     parser.add_argument("--no-browser", action="store_true")
+    parser.add_argument("--stop-file", type=Path)
     args = parser.parse_args()
     if not (ROOT / "frontend" / "dist" / "index.html").is_file():
         parser.error("Compile la interfaz con npm run build o use el paquete de ejecución.")
@@ -48,7 +49,7 @@ def main():
     print(
         f"Grupo Abogados D Honduras: {url}\nPara cerrar de forma controlada, pulse Ctrl+C en esta ventana."
     )
-    uvicorn.run(
+    config = uvicorn.Config(
         "backend.app:app",
         host=args.host,
         port=args.port,
@@ -58,6 +59,21 @@ def main():
         log_level="warning",
         access_log=False,
     )
+    server = uvicorn.Server(config)
+    finished = threading.Event()
+    if args.stop_file:
+
+        def watch_stop():
+            while not finished.wait(0.25):
+                if args.stop_file.is_file():
+                    server.should_exit = True
+                    return
+
+        threading.Thread(target=watch_stop, daemon=True).start()
+    try:
+        server.run()
+    finally:
+        finished.set()
 
 
 if __name__ == "__main__":

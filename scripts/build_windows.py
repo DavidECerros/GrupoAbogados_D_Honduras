@@ -60,14 +60,14 @@ def main():
             ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
         )
     shutil.copytree(root / "frontend" / "dist", bundle / "frontend" / "dist")
-    for name in ("Iniciar.cmd", "RecuperarSuperusuario.cmd", "README.md", "requirements-lock.txt"):
+    for name in ("Iniciar.cmd", "Detener.cmd", "IniciarConsola.cmd", "RecuperarSuperusuario.cmd", "README.md", "CHANGELOG.md", "requirements-lock.txt"):
         shutil.copy2(root / name, bundle / name)
     (bundle / "CrearAccesoDirecto.ps1").write_text(
         "$shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path ([Environment]::GetFolderPath('Desktop')) 'Grupo Abogados D Honduras.lnk'))\n$shortcut.TargetPath = Join-Path $PSScriptRoot 'Iniciar.cmd'\n$shortcut.WorkingDirectory = $PSScriptRoot\n$shortcut.Save()\n",
         encoding="utf-8",
     )
     manifest = {
-        "version": "0.1.2",
+        "version": "0.1.3",
         "python_zip_sha256": hashlib.sha256(args.python_zip.read_bytes()).hexdigest(),
         "files": {
             p.relative_to(bundle).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
@@ -77,7 +77,7 @@ def main():
     }
     (bundle / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     archive = shutil.make_archive(
-        str(release / "GrupoAbogados_D_Honduras-Windows-v0.1.2"), "zip", release, bundle.name
+        str(release / "GrupoAbogados_D_Honduras-Windows-v0.1.3"), "zip", release, bundle.name
     )
     print(archive)
 

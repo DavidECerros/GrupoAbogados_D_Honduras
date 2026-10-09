@@ -1,5 +1,15 @@
 # Registro de versiones
 
+## 0.1.3 — 8 de octubre de 2026
+
+- Inicio del servidor en segundo plano, apertura del navegador cuando responde
+  y reutilizacion del proceso al abrir el acceso directo varias veces.
+- `Detener.cmd` para cierre controlado e `IniciarConsola.cmd` para diagnostico.
+- Registros y PID fuera del codigo; aviso si otra instalacion ocupa el puerto.
+- Estado del servidor informa la version real de la aplicacion.
+- Validacion: 55 pruebas de backend, Ruff y compilacion de produccion.
+  Inicio oculto, reutilizacion del PID y cierre controlado comprobados en Windows.
+
 ## 0.1.2 — 8 de octubre de 2026
 
 - Importación Excel y CSV de clientes y lotes con vista previa, errores por fila,

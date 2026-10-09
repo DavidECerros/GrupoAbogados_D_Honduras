@@ -3,14 +3,14 @@
 Gestor local de lotificadoras, ventas y cobros para Grupo Abogados D Honduras.
 Implementación del documento de requisitos del 29 de septiembre de 2026.
 
-La versión 0.1.2 agrega importación/exportación de clientes y lotes, plantillas
+La versión 0.1.3 incluye importación/exportación de clientes y lotes, plantillas
 Excel descargables, editor SQL para el superusuario y traslado de la carpeta
 de datos. Consulte [administración de datos](docs/ADMINISTRAR_DATOS.md) y
 [opciones online](docs/OPCIONES_ONLINE.md).
 
 ## Estado del proyecto
 
-Primera versión funcional, v0.1.2. Incluye interfaz en español y backend para
+Primera versión funcional, v0.1.3. Incluye interfaz en español y backend para
 autenticación, segregación por entidad, clientes, lotes, reservas, contratos, cuotas,
 cobros, cesiones, autorizaciones, auditoría, recibos PDF, exportación Excel y
 respaldo/restauración. Las verificaciones y límites están en
@@ -27,12 +27,14 @@ formulario para crear el único superusuario.
 
 ## Uso en Windows
 
-El paquete `GrupoAbogados_D_Honduras-Windows-v0.1.2.zip` contiene Python,
+El paquete `GrupoAbogados_D_Honduras-Windows-v0.1.3.zip` contiene Python,
 dependencias y frontend compilado. Extraiga el ZIP en una carpeta local y abra
 `Iniciar.cmd`. El navegador abrirá `http://localhost:8000`.
 Use `CrearAccesoDirecto.ps1` para crear el acceso directo opcional.
 No requiere Python, Node ni internet en el equipo de destino.
-Pulse Ctrl+C en la ventana del servidor para cerrar de forma controlada.
+El servidor funciona en segundo plano y la ventana CMD se cierra automaticamente.
+Cerrar el navegador no detiene el sistema. Use `Detener.cmd` para cerrarlo de
+forma controlada o `IniciarConsola.cmd` para ver la consola de diagnostico.
 
 Manuales: [instalación](docs/INSTALACION.md), [operación](docs/OPERACION.md),
 [respaldo y recuperación](docs/RECUPERACION.md).

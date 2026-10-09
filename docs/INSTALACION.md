@@ -2,14 +2,29 @@
 
 ## Paquete local de Windows
 
-1. Copie el ZIP `GrupoAbogados_D_Honduras-Windows-v0.1.2.zip` al equipo principal.
+1. Copie el ZIP `GrupoAbogados_D_Honduras-Windows-v0.1.3.zip` al equipo principal.
 2. Extraiga todos sus archivos a una carpeta local, por ejemplo `C:\GrupoAbogados`.
-3. Abra `Iniciar.cmd`. Mantenga abierta la ventana del servidor durante el trabajo.
+3. Abra `Iniciar.cmd`. El servidor se ejecuta en segundo plano y la ventana CMD
+   se cierra automaticamente cuando esta listo. Cerrar el navegador no lo detiene.
 4. Entre a `http://localhost:8000`. En el primer inicio cree su superusuario con
    nombre, usuario y contraseña de al menos 12 caracteres. No hay contraseña inicial.
 5. Cree una lotificadora y sus operadores. Asigne explícitamente las entidades.
 6. Opcional: ejecute `CrearAccesoDirecto.ps1` del paquete para agregar el acceso directo.
-7. Para cerrar, termine las operaciones en curso y pulse Ctrl+C en la ventana del servidor.
+7. Para cerrar, termine las operaciones en curso y abra `Detener.cmd`.
+   Tambien puede finalizar `python.exe` desde Administrador de tareas > Detalles;
+   identifique el proceso por su linea de comandos `scripts\run.py` y carpeta
+   del programa. El PID se guarda en
+   `%LOCALAPPDATA%\GrupoAbogados_D_Honduras-launcher\8000.json`.
+   `Detener.cmd` permite un cierre controlado del servidor.
+8. Para diagnosticar problemas, use `IniciarConsola.cmd` despues de detener el
+   servidor. En ese modo la ventana permanece abierta y se cierra con Ctrl+C.
+   Los registros del inicio oculto estan en la misma carpeta `launcher`:
+   `8000-error.log` y `8000-output.log`.
+
+Abrir `Iniciar.cmd` varias veces abre el navegador y reutiliza el servidor de
+esa carpeta. Si otra version ocupa el puerto, se avisa sin abrir otro servidor.
+Este inicio no es un servicio de Windows: no arranca automaticamente al encender
+el equipo y se detiene al cerrar la sesion de Windows o apagarlo.
 
 La operación diaria funciona sin internet. No utiliza CDN, fuentes remotas ni
 proveedores externos de autenticación. El frontend está compilado y se sirve por
@@ -24,8 +39,9 @@ al actualizar y al recuperar el superusuario.
 SQLite debe permanecer en el disco del equipo principal. No coloque la base en
 una carpeta de red ni permita acceso directo desde equipos clientes.
 
-Actualización: cierre el servidor, haga respaldo, conserve la carpeta de datos y
-reemplace solo la carpeta del programa. La versión 0.1.2 migra automáticamente
+Actualización: haga respaldo, cierre el servidor con `Detener.cmd` (o Ctrl+C
+si es una version anterior), conserve la carpeta de datos y
+reemplace solo la carpeta del programa. La versión 0.1.3 migra automáticamente
 el esquema 1 al 2 al iniciar: agrega el estado del cliente y conserva los registros.
 También permite restaurar respaldos anteriores y migrarlos al esquema actual.
 
