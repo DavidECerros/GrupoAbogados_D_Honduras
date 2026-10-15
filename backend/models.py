@@ -28,12 +28,16 @@ class Operator(Model):
     full_name: str = Field(min_length=1, max_length=150)
     password: str = Field(min_length=12, max_length=1024)
     entity_ids: list[int] = []
+    profile: Literal["administrator", "standard"] = "standard"
+    permissions: dict[str, Literal["none", "read", "write"]] | None = None
 
 
 class UserUpdate(Model):
     full_name: str = Field(min_length=1, max_length=150)
     active: bool
     entity_ids: list[int]
+    profile: Literal["administrator", "standard"] = "standard"
+    permissions: dict[str, Literal["none", "read", "write"]] | None = None
 
 
 class Reset(Model):
@@ -79,8 +83,11 @@ class DataLocation(Model):
 class Lot(Model):
     code: str = Field(min_length=1, max_length=80)
     description: str = Field(max_length=2000, default="")
-    price: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
+    price: Decimal = Field(gt=0, max_digits=14, decimal_places=2, default=Decimal("0.01"))
     currency: Literal["HNL", "USD"] = "HNL"
+    area_m2: Decimal = Field(ge=0, max_digits=16, decimal_places=6, default=Decimal("0"))
+    area_v2: Decimal | None = Field(ge=0, max_digits=16, decimal_places=6, default=None)
+    pricing_unit: Literal["fixed", "m2", "v2"] = "fixed"
 
 
 class Reservation(Model):
@@ -98,6 +105,7 @@ class Sale(Model):
     installments: int = Field(gt=0, le=600, strict=True)
     down_due: date
     first_due: date
+    quote_token: str | None = None
 
 
 class Payment(Model):
@@ -143,3 +151,9 @@ class Settings(Model):
     exchange_rate: Decimal | None = Field(default=None, gt=0, max_digits=12, decimal_places=6)
     paper: Literal["letter", "half_letter"] = "letter"
     backup_destination: str = ""
+    price_m2: Decimal | None = Field(default=None, gt=0, max_digits=14, decimal_places=4)
+    price_v2: Decimal | None = Field(default=None, gt=0, max_digits=14, decimal_places=4)
+    land_currency: Literal["HNL", "USD"] = "HNL"
+    vara_m2: Decimal = Field(
+        default=Decimal("0.697224"), gt=Decimal("0.1"), lt=Decimal("2"), decimal_places=9
+    )

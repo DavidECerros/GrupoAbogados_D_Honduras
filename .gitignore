@@ -12,3 +12,4 @@ wheelhouse/
 release/
 qa/
 *.log
+output/

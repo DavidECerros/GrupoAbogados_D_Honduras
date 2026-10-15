@@ -33,9 +33,15 @@ import { Payments } from "./payments";
 import { Approvals, Arrears, Dashboard, Transactions } from "./reports";
 import { Settings } from "./settings";
 import { DatabasePanel } from "./data-tools";
+import { Plans } from "./plans";
 import "./style.css";
 
 const pages = {
+  plans: [
+    "Planos y coordenadas",
+    "Reunión de lotes, medidas, colindancias y mapa de Honduras.",
+    Landmark,
+  ],
   dashboard: [
     "Resumen",
     "Las cifras de tu operación, en un solo lugar.",
@@ -109,6 +115,8 @@ function App() {
   const toastTimer = useRef(null),
     lastActivity = useRef(0);
   const admin = session?.role === "superuser";
+  const canRead = (key) =>
+    admin || ["read", "write"].includes(session?.permissions?.[key]);
   function notify(text, error = false) {
     setToast({ text, error });
     clearTimeout(toastTimer.current);
@@ -124,7 +132,24 @@ function App() {
     setSession(data.user);
     setCsrf(data.csrf);
     if (data.today) setToday(data.today);
-    setScreen(data.user.role === "superuser" ? "dashboard" : "contracts");
+    setScreen(
+      data.user.role === "superuser"
+        ? "dashboard"
+        : [
+            "dashboard",
+            "clients",
+            "lots",
+            "reservations",
+            "contracts",
+            "payments",
+            "arrears",
+            "plans",
+            "transactions",
+            "approvals",
+          ].find((key) =>
+            ["read", "write"].includes(data.user.permissions?.[key]),
+          ) || "contracts",
+    );
     setPassword(!!data.user.must_change);
   }
   useEffect(() => {
@@ -199,6 +224,7 @@ function App() {
   function navigate(key) {
     if (
       [
+        "plans",
         "clients",
         "lots",
         "reservations",
@@ -255,8 +281,11 @@ function App() {
     version,
     refresh,
     notify,
+    writable: admin || session.permissions?.[screen] === "write",
+    profile: session.profile,
   };
   const requiresEntity = [
+    "plans",
     "clients",
     "lots",
     "reservations",
@@ -272,6 +301,7 @@ function App() {
     "contracts",
     "payments",
     "arrears",
+    "plans",
     "transactions",
     "approvals",
   ];
@@ -301,7 +331,7 @@ function App() {
         <div className="workspace-label">ADMINISTRACIÓN DE LOTES</div>
         <nav>
           {navigation
-            .filter((key) => admin || key !== "dashboard")
+            .filter((key) => canRead(key))
             .map((key) => {
               const Icon = pages[key][2];
               return (
@@ -355,7 +385,13 @@ function App() {
             </span>
             <div>
               <strong>{session.full_name}</strong>
-              <small>{admin ? "Superusuario" : "Operador"}</small>
+              <small>
+                {admin
+                  ? "Superusuario"
+                  : session.profile === "administrator"
+                    ? "Administrador"
+                    : "Usuario estándar"}
+              </small>
             </div>
             <button
               className="icon"
@@ -453,9 +489,18 @@ function App() {
               <p>{pages[screen][1]}</p>
             </div>
             <div className="offline-chip">
-              <span /> Disponible sin internet
+              <span />{" "}
+              {screen === "plans"
+                ? "Mapa online opcional"
+                : "Disponible sin internet"}
             </div>
           </div>
+          {!common.writable && canRead(screen) && (
+            <p className="info-box">
+              Acceso de solo consulta. El superusuario puede habilitar la
+              edición en Usuarios.
+            </p>
+          )}
           {visibleAlerts.some(
             (r) =>
               r.overdue_count > 0 ||
@@ -487,7 +532,12 @@ function App() {
               </button>
             </div>
           )}
-          {requiresEntity && !entity ? (
+          {!canRead(screen) ? (
+            <p className="info-box">
+              No tienes acceso a este módulo. Solicita al superusuario que
+              revise tus permisos.
+            </p>
+          ) : requiresEntity && !entity ? (
             <div className="panel">
               <Empty>
                 {admin
@@ -508,6 +558,7 @@ function App() {
           ) : (
             <React.Fragment key={screen + "-" + entity}>
               {screen === "dashboard" && <Dashboard {...common} />}
+              {screen === "plans" && <Plans {...common} />}
               {["clients", "lots", "entities"].includes(screen) && (
                 <Catalog {...common} kind={screen} />
               )}
@@ -544,7 +595,7 @@ function App() {
         </main>
         <footer>
           Grupo Abogados D Honduras{" "}
-          <span>Gestión de lotificadoras · v0.1.3</span>
+          <span>Gestión de lotificadoras · v0.2.0</span>
         </footer>
       </div>
       {password && (

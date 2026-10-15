@@ -1,5 +1,24 @@
 # Registro de versiones
 
+## 0.2.0 — 14 de octubre de 2026
+
+- Áreas de lotes en m² y varas², selección de unidad de venta y tarifas por
+  superficie exclusivas del superusuario junto a la configuración del dólar.
+- Cotización contractual validada en el servidor, con detección de cambios y
+  conservación de área, factor, tarifa y moneda de la venta.
+- Roles Administrador y Usuario estándar; diez módulos identificados con acceso
+  desactivado, consulta o edición y autorización en cada solicitud de la API.
+- Planos con coordenadas locales/GPS/UTM, rumbos y distancias, revisión geométrica,
+  reunión de polígonos contiguos, PDF a escala y exportación GeoJSON.
+- Formato de reunión con título fijo, calle/avenida, cuadro de colindancias,
+  datos profesionales y propietario consultado desde el contrato del lote.
+- Resumen primero, seguido por clientes, lotes, reservas, contratos, cobros,
+  morosidad, planos, historial y autorizaciones.
+- Mapa de Honduras con OpenStreetMap por internet, opcional y con atribución.
+- Esquema 3 y restauración compatible con respaldos de versiones anteriores.
+- Plantilla y exportación de lotes ampliadas sin rechazar archivos anteriores.
+- Validación: 75 pruebas, Ruff, ESLint, compilación y comprobaciones en navegador.
+
 ## 0.1.3 — 8 de octubre de 2026
 
 - Inicio del servidor en segundo plano, apertura del navegador cuando responde

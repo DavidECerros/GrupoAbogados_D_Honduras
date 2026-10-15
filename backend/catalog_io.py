@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from . import models
 from .db import audit, now
 from .finance import cents, require
+from .land_pricing import areas, describe
 
 FIELDS = {
     "clients": [
@@ -33,6 +34,9 @@ FIELDS = {
         ("price", "Precio"),
         ("currency", "Moneda"),
         ("status", "Estado"),
+        ("area_m2", "Área m²"),
+        ("area_v2", "Área vara²"),
+        ("pricing_unit", "Unidad de precio"),
     ],
 }
 STATUS = {
@@ -72,11 +76,13 @@ def export_catalog(db, entity, kind, q="", state=""):
     sheet.title = "Clientes" if kind == "clients" else "Lotes"
     sheet.append([title for field, title in FIELDS[kind]])
     for record in rows:
+        if kind == "lots":
+            record = describe(db, dict(record))
         values = []
         for field, title in FIELDS[kind]:
             value = record[field]
-            if field == "price":
-                value = Decimal(value) / 100
+            if field in ("price", "area_m2", "area_v2"):
+                value = Decimal(value) / (100 if field == "price" else 1)
             if field == "status":
                 value = next((label for label, code in STATUS.items() if code == value), value)
             values.append(value)
@@ -139,7 +145,13 @@ def read_file(content, filename, kind):
     headers = [str(value or "").strip() for value in records[0]]
     expected = dict((title, field) for field, title in FIELDS[kind])
     require(len(headers) == len(set(headers)), "Encabezados duplicados")
-    require(set(headers) == set(expected), "Los encabezados deben coincidir con la plantilla")
+    required = set(expected) - (
+        {"Área m²", "Área vara²", "Unidad de precio"} if kind == "lots" else set()
+    )
+    require(
+        required.issubset(headers) and set(headers).issubset(expected),
+        "Los encabezados deben coincidir con la plantilla",
+    )
     return [
         (
             index,
@@ -168,7 +180,9 @@ def plan_import(db, entity, kind, records, mode):
             raw_status = str(values.pop("status") or "").strip()
             status = STATUS.get(raw_status, raw_status)
             for key, value in list(values.items()):
-                if key != "price":
+                if key in ("area_m2", "area_v2", "pricing_unit") and value in (None, ""):
+                    values.pop(key)
+                elif key not in ("price", "area_m2", "area_v2"):
                     require(
                         not isinstance(value, (int, float)),
                         f"{key}: use texto para conservar ceros iniciales",
@@ -208,6 +222,13 @@ def plan_import(db, entity, kind, records, mode):
                 require(status in ("active", "inactive"), "Estado debe ser Activo o Inhabilitado")
                 data["status"] = status
             else:
+                if previous:
+                    if "area_m2" not in values and "area_v2" not in values:
+                        data["area_m2"] = previous["area_m2"]
+                    if "pricing_unit" not in values:
+                        data["pricing_unit"] = previous["pricing_unit"]
+                data["area_m2"] = areas(db, models.Lot(**data))
+                data.pop("area_v2", None)
                 require(
                     not status or status == (previous["status"] if previous else "available"),
                     "El estado del lote depende de reservas y contratos; no se importa",
@@ -238,6 +259,9 @@ def apply_import(db, user, entity, kind, changes, reason):
     for item in changes:
         data, identifier = dict(item["data"]), item["id"]
         if kind == "lots":
+            model = models.Lot(**data)
+            data["area_m2"] = areas(db, model)
+            data.pop("area_v2", None)
             data["price"] = cents(data["price"])
         fields = list(data)
         if identifier:

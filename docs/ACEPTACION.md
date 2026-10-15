@@ -1,4 +1,19 @@
-# Evidencia de aceptación de la versión 0.1.2
+# Evidencia de aceptación de la versión 0.2.0
+
+Verificación adicional: 14 de octubre de 2026. Pasan 75 pruebas automatizadas,
+Ruff, ESLint y compilación de producción. Se comprobaron en el navegador el
+precio automático, módulos por rol, mapa de Honduras, título fijo y consulta
+del propietario desde el contrato del lote. Se revisó visualmente el PDF de
+reunión y su cuadro de coordenadas. El runtime Windows carga pyproj, Shapely y
+NumPy sin instalaciones en destino. La actualización usa el esquema 3.
+
+Casos nuevos: conversión m²/varas, tarifas y cotizaciones obsoletas, conservación
+de contratos anteriores, edición rechazada en módulos de consulta, aislamiento
+entre entidades, coordenadas UTM 16/17 y GPS, rechazo de polígonos inválidos,
+unión de lotes contiguos sin cambiar contratos, rechazos por solapamiento o
+separación, propietario contractual y compatibilidad de importaciones anteriores.
+
+La evidencia previa de la versión 0.1.2 se conserva a continuación.
 
 Fecha de verificación: 8 de octubre de 2026. Los datos son sintéticos y están
 aislados de la instalación de operación. El requerimiento fuente es la versión

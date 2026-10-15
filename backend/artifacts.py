@@ -250,7 +250,7 @@ def restore(content, user):
                 )
                 require(
                     probe.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
-                    in (1, 2),
+                    in (1, 2, 3),
                     "Esquema incompatible",
                 )
                 superuser = probe.execute(

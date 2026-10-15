@@ -24,6 +24,7 @@ export function Contracts({
   refresh,
   notify,
   onCollect,
+  writable = true,
 }) {
   const [q, setQ] = useState(""),
     [page, setPage] = useState(1),
@@ -44,7 +45,11 @@ export function Contracts({
           }}
           placeholder="Buscar cliente, documento o lote"
         />
-        <button className="primary" onClick={() => setCreate(true)}>
+        <button
+          disabled={!writable}
+          className="primary"
+          onClick={() => setCreate(true)}
+        >
           <Plus size={17} /> Nueva venta
         </button>
       </div>
@@ -126,6 +131,8 @@ export function Contracts({
 }
 
 function SaleForm({ entity, today, onClose, onSaved }) {
+  const [quotation, setQuotation] = useState(null),
+    [quoteError, setQuoteError] = useState("");
   const [data, setData] = useState({
     lot_id: "",
     client_id: "",
@@ -137,6 +144,26 @@ function SaleForm({ entity, today, onClose, onSaved }) {
     first_due: today,
   });
   const update = (key, value) => setData((prev) => ({ ...prev, [key]: value }));
+  useEffect(() => {
+    setQuotation(null);
+    setQuoteError("");
+    if (!data.lot_id) return;
+    const abort = new AbortController();
+    api(`/lots/${data.lot_id}/quote`, { signal: abort.signal })
+      .then((q) => {
+        setQuotation(q);
+        setData((prev) => ({
+          ...prev,
+          price: (q.price / 100).toFixed(2),
+          currency: q.currency,
+          quote_token: q.quote_token,
+        }));
+      })
+      .catch((err) => {
+        if (err.name !== "AbortError") setQuoteError(err.message);
+      });
+    return () => abort.abort();
+  }, [data.lot_id]);
   const financed = Math.max(
     0,
     Math.round(Number(data.price || 0) * 100) -
@@ -150,6 +177,8 @@ function SaleForm({ entity, today, onClose, onSaved }) {
         confirm
         confirmationText="Revisé cliente, lote, precio y vencimientos. Confirmo el registro de la venta."
         onSubmit={async () => {
+          if (!quotation || quoteError)
+            throw new Error(quoteError || "Espere la cotización del lote");
           await api(`/entities/${entity}/contracts`, {
             method: "POST",
             body: { ...data, installments: Number(data.installments) },
@@ -187,6 +216,7 @@ function SaleForm({ entity, today, onClose, onSaved }) {
             step="0.01"
             required
             value={data.price}
+            readOnly={quotation?.unit !== "fixed"}
             onChange={(e) => update("price", e.target.value)}
           />
           <Input
@@ -224,6 +254,17 @@ function SaleForm({ entity, today, onClose, onSaved }) {
             onChange={(e) => update("first_due", e.target.value)}
           />
         </div>
+        {quoteError && <p className="error">{quoteError}</p>}
+        {quotation && quotation.unit !== "fixed" && (
+          <p className="info-box">
+            Precio automático:{" "}
+            {Number(
+              quotation.unit === "m2" ? quotation.area_m2 : quotation.area_v2,
+            ).toLocaleString("es-HN")}{" "}
+            {quotation.unit === "m2" ? "m²" : "vara²"} × {quotation.currency}{" "}
+            {quotation.unit_price}. Se conservará esta tarifa en el contrato.
+          </p>
+        )}
         <div className="info-box">
           Saldo a financiar: <strong>{money(financed, data.currency)}</strong> ·
           Cuota estimada:{" "}
@@ -343,6 +384,22 @@ export function Account({
             <span>
               Precio: {money(account.price, account.currency)} · Prima:{" "}
               {money(account.down_payment, account.currency)}
+              {account.pricing_snapshot &&
+                (() => {
+                  const basis = JSON.parse(account.pricing_snapshot);
+                  return (
+                    basis.unit !== "fixed" && (
+                      <small className="block">
+                        Base de la venta:{" "}
+                        {basis.unit === "m2"
+                          ? basis.area_m2 + " m²"
+                          : basis.area_v2 + " vara²"}{" "}
+                        × {basis.currency} {basis.unit_price} · Tarifa
+                        conservada
+                      </small>
+                    )
+                  );
+                })()}
             </span>
             <div className="row-actions">
               {account.balance > 0 && (

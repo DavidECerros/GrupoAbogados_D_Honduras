@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from . import admin_data, artifacts, catalog_io
+from . import admin_data, artifacts, catalog_io, land_pricing, permissions
 from . import db as database
 from . import models as m
 from .db import audit, now, setting, today, transaction
@@ -39,6 +39,7 @@ from .finance import (
     transfer_contract,
     void_payment,
 )
+from .land_api import register as register_land_routes
 
 HASHER = PasswordHasher(time_cost=3, memory_cost=19456, parallelism=1)
 DUMMY_HASH = HASHER.hash(secrets.token_hex(24))
@@ -54,7 +55,7 @@ async def lifespan(app):
 
 app = FastAPI(
     title="Grupo Abogados D Honduras",
-    version="0.1.3",
+    version="0.2.0",
     docs_url=None,
     redoc_url=None,
     openapi_url=None,
@@ -78,9 +79,9 @@ async def guard(request, call_next):
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
-    response.headers["Referrer-Policy"] = "same-origin"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+        "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://tile.openstreetmap.org; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
     )
     if request.url.path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-store"
@@ -210,6 +211,9 @@ def authenticated(request: Request, db: DB):
             "last_login",
         )
     }
+    user["profile"] = session["profile"]
+    user["permissions"] = permissions.resolved(session)
+    permissions.guard(user, request.url.path, request.method)
     if user["must_change"]:
         require(
             request.url.path in ("/api/auth/me", "/api/auth/password", "/api/auth/logout"),
@@ -242,6 +246,11 @@ def public_user(db, user):
         r[0]
         for r in db.execute("SELECT entity_id FROM user_entities WHERE user_id=?", (user["id"],))
     ]
+    details = db.execute(
+        "SELECT profile,permissions FROM users WHERE id=?", (user["id"],)
+    ).fetchone()
+    result["profile"] = details["profile"]
+    result["permissions"] = permissions.resolved({**result, "permissions": details["permissions"]})
     return result
 
 
@@ -389,10 +398,15 @@ def users(user: User, db: DB):
 @app.post("/api/users")
 def create_user(data: m.Operator, user: User, db: DB):
     admin(user)
+    selected_permissions = permissions.validate(data.permissions)
     identifier = db.execute(
         "INSERT INTO users(username,full_name,password_hash,role,must_change,created_at) VALUES(?,?,?,'operator',1,?)",
         (data.username, data.full_name, HASHER.hash(data.password), now()),
     ).lastrowid
+    db.execute(
+        "UPDATE users SET profile=?,permissions=? WHERE id=?",
+        (data.profile, selected_permissions, identifier),
+    )
     for entity in set(data.entity_ids):
         db.execute("INSERT INTO user_entities VALUES(?,?)", (identifier, entity))
     result = public_user(db, row(db, "users", identifier))
@@ -411,6 +425,11 @@ def update_user(identifier: int, data: m.UserUpdate, user: User, db: DB):
         "UPDATE users SET full_name=?,active=? WHERE id=?",
         (data.full_name, int(data.active), identifier),
     )
+    if previous["role"] != "superuser":
+        db.execute(
+            "UPDATE users SET profile=?,permissions=? WHERE id=?",
+            (data.profile, permissions.validate(data.permissions), identifier),
+        )
     db.execute("DELETE FROM user_entities WHERE user_id=?", (identifier,))
     for entity in set(data.entity_ids):
         db.execute("INSERT INTO user_entities VALUES(?,?)", (identifier, entity))
@@ -572,7 +591,7 @@ def create_client(entity: int, data: m.Client, user: User, db: DB):
 def edit_client(identifier: int, data: m.Client, user: User, db: DB):
     previous = row(db, "clients", identifier)
     authorize(db, user, previous["entity_id"], True)
-    if user["role"] != "superuser":
+    if user["role"] != "superuser" and user.get("profile") != "administrator":
         require(
             (data.name, data.document_type, data.document)
             == (previous["name"], previous["document_type"], previous["document"]),
@@ -638,7 +657,7 @@ def lots(
     filters = (entity, f"%{q}%", f"%{q}%", state, state)
     return {
         "items": [
-            dict(r)
+            land_pricing.describe(db, dict(r))
             for r in db.execute(
                 f"SELECT * FROM lots WHERE {where} ORDER BY code LIMIT ? OFFSET ?",
                 (*filters, limit, offset),
@@ -650,11 +669,19 @@ def lots(
 
 @app.post("/api/entities/{entity}/lots")
 def create_lot(entity: int, data: m.Lot, user: User, db: DB):
-    admin(user)
+    permissions.check(user, "lots", True)
     authorize(db, user, entity, True)
     identifier = db.execute(
-        "INSERT INTO lots(entity_id,code,description,price,currency) VALUES(?,?,?,?,?)",
-        (entity, data.code, data.description, cents(data.price), data.currency),
+        "INSERT INTO lots(entity_id,code,description,price,currency,area_m2,pricing_unit) VALUES(?,?,?,?,?,?,?)",
+        (
+            entity,
+            data.code,
+            data.description,
+            cents(data.price),
+            data.currency,
+            land_pricing.areas(db, data),
+            data.pricing_unit,
+        ),
     ).lastrowid
     result = row(db, "lots", identifier)
     audit(db, user, "create_lot", entity, "lot", identifier, after=result)
@@ -663,12 +690,20 @@ def create_lot(entity: int, data: m.Lot, user: User, db: DB):
 
 @app.put("/api/lots/{identifier}")
 def edit_lot(identifier: int, data: m.Lot, user: User, db: DB):
-    admin(user)
+    permissions.check(user, "lots", True)
     previous = row(db, "lots", identifier)
     authorize(db, user, previous["entity_id"], True)
     db.execute(
-        "UPDATE lots SET code=?,description=?,price=?,currency=? WHERE id=?",
-        (data.code, data.description, cents(data.price), data.currency, identifier),
+        "UPDATE lots SET code=?,description=?,price=?,currency=?,area_m2=?,pricing_unit=? WHERE id=?",
+        (
+            data.code,
+            data.description,
+            cents(data.price),
+            data.currency,
+            land_pricing.areas(db, data),
+            data.pricing_unit,
+            identifier,
+        ),
     )
     result = row(db, "lots", identifier)
     audit(
@@ -930,7 +965,8 @@ def mora(
 
 @app.get("/api/dashboard")
 def dashboard(user: User, db: DB, entity: int | None = None, month: str = ""):
-    admin(user)
+    permissions.check(user, "dashboard")
+    require(user["role"] == "superuser" or entity is not None, "Seleccione una lotificadora", 403)
     if entity:
         authorize(db, user, entity)
     month = month or today(db).strftime("%Y-%m")
@@ -1289,6 +1325,16 @@ def update_settings(data: m.Settings, user: User, db: DB):
             "INSERT INTO settings VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
             (key, str(value) if value is not None else ""),
         )
+    if any(
+        previous.get(key, "") != str(value or "")
+        for key, value in {
+            "price_m2": data.price_m2,
+            "price_v2": data.price_v2,
+            "land_currency": data.land_currency,
+            "vara_m2": data.vara_m2,
+        }.items()
+    ):
+        db.execute("UPDATE settings SET value=? WHERE key='land_rate_updated'", (now(),))
     audit(
         db,
         user,
@@ -1572,6 +1618,8 @@ def database_location(data: m.DataLocation, user: User, db: DB):
     backup = artifacts.backup(user)
     return {**admin_data.relocate(db, user, data.path, data.reason), "backup": backup.name}
 
+
+register_land_routes(app, User, DB)
 
 STATIC = Path(__file__).resolve().parents[1] / "frontend" / "dist"
 if STATIC.exists():

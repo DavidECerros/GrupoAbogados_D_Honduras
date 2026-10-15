@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Edit3,
   Plus,
@@ -23,7 +23,16 @@ import {
   useList,
 } from "./components";
 
-export function Catalog({ kind, entity, admin, refresh, version, notify }) {
+export function Catalog({
+  kind,
+  entity,
+  admin,
+  writable = true,
+  profile,
+  refresh,
+  version,
+  notify,
+}) {
   const [q, setQ] = useState(""),
     [page, setPage] = useState(1),
     [state, setState] = useState(kind === "clients" ? "active" : ""),
@@ -65,9 +74,32 @@ export function Catalog({ kind, entity, admin, refresh, version, notify }) {
           },
           { key: "description", title: "Ubicación" },
           {
+            key: "area_m2",
+            title: "Área m² / vara²",
+            render: (r) => (
+              <>
+                <strong>{Number(r.area_m2).toLocaleString("es-HN")} m²</strong>
+                <small className="block">
+                  {Number(r.area_v2).toLocaleString("es-HN")} vara²
+                </small>
+              </>
+            ),
+          },
+          {
             key: "price",
-            title: "Precio base",
-            render: (r) => money(r.price, r.currency),
+            title: "Valor de nueva venta",
+            render: (r) => (
+              <>
+                {r.quotation
+                  ? money(r.quotation.price, r.quotation.currency)
+                  : r.quotation_error}
+                <small className="block">
+                  {r.pricing_unit === "fixed"
+                    ? "Precio fijo"
+                    : "Por " + (r.pricing_unit === "m2" ? "m²" : "vara²")}
+                </small>
+              </>
+            ),
           },
           {
             key: "status",
@@ -93,7 +125,7 @@ export function Catalog({ kind, entity, admin, refresh, version, notify }) {
     title: "",
     render: (r) => (
       <div className="row-actions">
-        {(isClient || admin) && (
+        {writable && (isClient || isLot || admin) && (
           <button
             className="icon"
             aria-label={"Editar " + title}
@@ -227,7 +259,7 @@ export function Catalog({ kind, entity, admin, refresh, version, notify }) {
             </button>
           </>
         )}
-        {(isClient || admin) && (
+        {writable && (isClient || isLot || admin) && (
           <button className="primary" onClick={() => setEditing({})}>
             <Plus size={17} /> Nuevo {title}
           </button>
@@ -342,6 +374,7 @@ export function Catalog({ kind, entity, admin, refresh, version, notify }) {
           initial={editing}
           entity={entity}
           admin={admin}
+          profile={profile}
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
@@ -354,7 +387,15 @@ export function Catalog({ kind, entity, admin, refresh, version, notify }) {
   );
 }
 
-function CatalogForm({ kind, initial, entity, admin, onClose, onSaved }) {
+function CatalogForm({
+  kind,
+  initial,
+  entity,
+  admin,
+  profile,
+  onClose,
+  onSaved,
+}) {
   const client = kind === "clients",
     lot = kind === "lots";
   const [data, setData] = useState(
@@ -373,6 +414,8 @@ function CatalogForm({ kind, initial, entity, admin, onClose, onSaved }) {
             description: initial.description || "",
             price: initial.price ? (initial.price / 100).toFixed(2) : "",
             currency: initial.currency || "HNL",
+            area_m2: initial.area_m2 || "0",
+            pricing_unit: initial.pricing_unit || "fixed",
           }
         : {
             name: initial.name || "",
@@ -381,6 +424,14 @@ function CatalogForm({ kind, initial, entity, admin, onClose, onSaved }) {
           },
   );
   const update = (key, value) => setData((prev) => ({ ...prev, [key]: value }));
+  const [areaUnit, setAreaUnit] = useState("m2"),
+    [conversion, setConversion] = useState(0.697224);
+  useEffect(() => {
+    if (lot)
+      api("/land-prices")
+        .then((r) => setConversion(Number(r.vara_m2)))
+        .catch(() => {});
+  }, []);
   async function save() {
     await api(
       initial.id
@@ -388,7 +439,17 @@ function CatalogForm({ kind, initial, entity, admin, onClose, onSaved }) {
         : kind === "entities"
           ? "/entities"
           : `/entities/${entity}/${kind}`,
-      { method: initial.id ? "PUT" : "POST", body: data },
+      {
+        method: initial.id ? "PUT" : "POST",
+        body: lot
+          ? {
+              ...data,
+              ...(areaUnit === "v2"
+                ? { area_v2: data.area_m2 || "0", area_m2: "0" }
+                : { area_m2: data.area_m2 || "0" }),
+            }
+          : data,
+      },
     );
     onSaved();
   }
@@ -409,21 +470,21 @@ function CatalogForm({ kind, initial, entity, admin, onClose, onSaved }) {
                 required
                 maxLength={150}
                 value={data.name}
-                disabled={initial.id && !admin}
+                disabled={initial.id && !admin && profile !== "administrator"}
                 onChange={(e) => update("name", e.target.value)}
               />
               <Input
                 title="Tipo de documento"
                 required
                 value={data.document_type}
-                disabled={initial.id && !admin}
+                disabled={initial.id && !admin && profile !== "administrator"}
                 onChange={(e) => update("document_type", e.target.value)}
               />
               <Input
                 title="Número de documento"
                 required
                 value={data.document}
-                disabled={initial.id && !admin}
+                disabled={initial.id && !admin && profile !== "administrator"}
                 onChange={(e) => update("document", e.target.value)}
               />
               <Input
@@ -469,6 +530,54 @@ function CatalogForm({ kind, initial, entity, admin, onClose, onSaved }) {
                 onChange={(e) => update("price", e.target.value)}
               />
               <Select
+                title="Unidad para ingresar el área"
+                options={[
+                  { value: "m2", label: "Metros cuadrados (m²)" },
+                  { value: "v2", label: "Varas cuadradas (vara²)" },
+                ]}
+                value={areaUnit}
+                onChange={(e) => {
+                  const unit = e.target.value;
+                  update(
+                    "area_m2",
+                    (
+                      Number(data.area_m2) *
+                      (unit === "v2" ? 1 / conversion : conversion)
+                    ).toFixed(6),
+                  );
+                  setAreaUnit(unit);
+                }}
+              />
+              <Input
+                title={
+                  "Área del lote en " + (areaUnit === "m2" ? "m²" : "vara²")
+                }
+                type="number"
+                min="0"
+                step="0.000001"
+                required
+                value={data.area_m2}
+                onChange={(e) => update("area_m2", e.target.value)}
+                hint={
+                  "Equivalente: " +
+                  (
+                    Number(data.area_m2) *
+                    (areaUnit === "m2" ? 1 / conversion : conversion)
+                  ).toFixed(4) +
+                  (areaUnit === "m2" ? " vara²" : " m²")
+                }
+              />
+              <Select
+                title="Calcular precio de nuevos contratos"
+                options={[
+                  { value: "fixed", label: "Precio fijo (lotes anteriores)" },
+                  { value: "m2", label: "Área × tarifa por m²" },
+                  { value: "v2", label: "Área × tarifa por vara²" },
+                ]}
+                value={data.pricing_unit}
+                onChange={(e) => update("pricing_unit", e.target.value)}
+              />
+              <Select
                 title="Moneda"
                 options={["HNL", "USD"]}
                 value={data.currency}
@@ -511,9 +620,12 @@ export function Users({ entities, version, refresh, notify }) {
   return (
     <>
       <div className="toolbar">
-        <p>Asigna a cada operador las lotificadoras que puede gestionar.</p>
+        <p>
+          Asigna rol, lotificadoras y acceso por módulo. Solo el superusuario
+          modifica tarifas y permisos.
+        </p>
         <button className="primary" onClick={() => setEditing({})}>
-          <Plus size={16} /> Nuevo operador
+          <Plus size={16} /> Nuevo usuario
         </button>
       </div>
       {error && <p className="error">{error}</p>}
@@ -535,7 +647,12 @@ export function Users({ entities, version, refresh, notify }) {
             {
               key: "role",
               title: "Rol",
-              render: (r) => <Badge value={r.role} />,
+              render: (r) =>
+                r.role === "superuser"
+                  ? "Superusuario"
+                  : r.profile === "administrator"
+                    ? "Administrador"
+                    : "Usuario estándar",
             },
             {
               key: "entity_ids",
@@ -624,17 +741,25 @@ export function Users({ entities, version, refresh, notify }) {
 }
 
 function UserForm({ initial, entities, onClose, onSaved }) {
+  const [definitions, setDefinitions] = useState(null);
+  useEffect(() => {
+    api("/modules")
+      .then(setDefinitions)
+      .catch(() => {});
+  }, []);
   const [data, setData] = useState({
     username: initial.username || "",
     full_name: initial.full_name || "",
     password: "",
     active: initial.active !== 0,
     entity_ids: initial.entity_ids || [],
+    profile: initial.profile || "standard",
+    permissions: initial.permissions || null,
   });
   const update = (key, value) => setData((prev) => ({ ...prev, [key]: value }));
   return (
     <Modal
-      title={initial.id ? "Editar usuario" : "Nuevo operador"}
+      title={initial.id ? "Editar usuario" : "Nuevo usuario"}
       onClose={onClose}
     >
       <Form
@@ -652,6 +777,10 @@ function UserForm({ initial, entities, onClose, onSaved }) {
                 password: data.password,
                 entity_ids: data.entity_ids,
               };
+          if (initial.role !== "superuser") {
+            body.profile = data.profile;
+            body.permissions = data.permissions;
+          }
           await api("/users" + (initial.id ? "/" + initial.id : ""), {
             method: initial.id ? "PUT" : "POST",
             body,
@@ -687,6 +816,49 @@ function UserForm({ initial, entities, onClose, onSaved }) {
         )}
         {initial.role !== "superuser" && (
           <>
+            <Select
+              title="Rol"
+              options={[
+                { value: "standard", label: "Usuario estándar" },
+                { value: "administrator", label: "Administrador" },
+              ]}
+              value={data.profile}
+              onChange={(e) => {
+                update("profile", e.target.value);
+                update("permissions", null);
+              }}
+            />
+            <p className="info-box">
+              El administrador trabaja en sus lotificadoras asignadas. Tarifas,
+              usuarios, respaldos y SQL siguen reservados al superusuario.
+            </p>
+            {definitions && (
+              <div className="permission-grid">
+                {Object.entries(definitions.modules).map(([key, title]) => (
+                  <Select
+                    key={key}
+                    title={title + " · " + key}
+                    options={[
+                      { value: "none", label: "Desactivado" },
+                      { value: "read", label: "Solo consulta" },
+                      { value: "write", label: "Consulta y edición" },
+                    ]}
+                    value={
+                      (data.permissions || definitions.profiles[data.profile])[
+                        key
+                      ] || "none"
+                    }
+                    onChange={(e) =>
+                      update("permissions", {
+                        ...(data.permissions ||
+                          definitions.profiles[data.profile]),
+                        [key]: e.target.value,
+                      })
+                    }
+                  />
+                ))}
+              </div>
+            )}
             <Field title="Lotificadoras permitidas">
               <div className="checks">
                 {entities.map((entity) => (

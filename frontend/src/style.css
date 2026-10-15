@@ -1457,3 +1457,53 @@ pre {
   width: 100%;
   min-height: 150px;
 }
+/* Land plans and module access */
+.permission-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.plan-fieldset {
+  padding: 0;
+  margin: 0;
+  border: 0;
+  min-width: 0;
+}
+.coordinate-row {
+  display: grid;
+  grid-template-columns: 22px 1fr 1fr 1.5fr auto;
+  gap: 10px;
+  align-items: center;
+  margin: 10px 0;
+}
+.plan-outline {
+  width: 100%;
+  max-height: 400px;
+  background: #fafbf8;
+  border: 1px solid var(--border, #dce4df);
+  border-radius: 10px;
+  margin: 20px 0;
+}
+.land-map-section {
+  margin-top: 25px;
+  padding-top: 20px;
+  border-top: 1px solid #dce4df;
+}
+.land-map-section h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.land-map {
+  height: 400px;
+  border-radius: 10px;
+  z-index: 0;
+}
+@media (max-width: 700px) {
+  .coordinate-row {
+    grid-template-columns: 20px 1fr 1fr;
+  }
+  .permission-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -18,6 +18,10 @@ export function Settings({ version, refresh, notify, onRestored }) {
           exchange_rate: result.exchange_rate || "",
           paper: result.paper,
           backup_destination: result.backup_destination || "",
+          price_m2: result.price_m2 || "",
+          price_v2: result.price_v2 || "",
+          land_currency: result.land_currency || "HNL",
+          vara_m2: result.vara_m2 || "0.697224",
         }),
       )
       .catch((err) => setError(err.message));
@@ -34,7 +38,12 @@ export function Settings({ version, refresh, notify, onRestored }) {
               onSubmit={async () => {
                 await api("/settings", {
                   method: "PUT",
-                  body: { ...data, exchange_rate: data.exchange_rate || null },
+                  body: {
+                    ...data,
+                    exchange_rate: data.exchange_rate || null,
+                    price_m2: data.price_m2 || null,
+                    price_v2: data.price_v2 || null,
+                  },
                 });
                 refresh();
                 notify("Configuración guardada");
@@ -55,6 +64,41 @@ export function Settings({ version, refresh, notify, onRestored }) {
                 value={data.timezone}
                 onChange={(e) => update("timezone", e.target.value)}
                 hint="Por ejemplo: America/Tegucigalpa"
+              />
+              <h3>Tarifas para nuevas ventas · Solo superusuario</h3>
+              <Select
+                title="Moneda de las tarifas de terreno"
+                options={["HNL", "USD"]}
+                value={data.land_currency}
+                onChange={(e) => update("land_currency", e.target.value)}
+              />
+              <Input
+                title="Precio por metro cuadrado (m²)"
+                type="number"
+                min="0.0001"
+                step="0.0001"
+                value={data.price_m2}
+                onChange={(e) => update("price_m2", e.target.value)}
+              />
+              <Input
+                title="Precio por vara cuadrada (vara²)"
+                type="number"
+                min="0.0001"
+                step="0.0001"
+                value={data.price_v2}
+                onChange={(e) => update("price_v2", e.target.value)}
+                hint="Cada lote selecciona su unidad de venta. Los contratos existentes conservan su tarifa."
+              />
+              <Input
+                title="Conversión: m² por una vara²"
+                type="number"
+                min="0.100000001"
+                max="1.999999999"
+                step="0.000000001"
+                required
+                value={data.vara_m2}
+                onChange={(e) => update("vara_m2", e.target.value)}
+                hint="Factor inicial configurable: 0.697224. Verifica el factor usado en el levantamiento; no se deduce de la imagen de ejemplo."
               />
               <Select
                 title="Tamaño del recibo"

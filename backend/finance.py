@@ -68,6 +68,8 @@ def schedule(
 
 
 def create_sale(db, user, entity, data):
+    from .land_pricing import quote
+
     authorize(db, user, entity, True)
     lot, client = row(db, "lots", data.lot_id), row(db, "clients", data.client_id)
     require(
@@ -75,9 +77,22 @@ def create_sale(db, user, entity, data):
         "Registros de otra entidad",
         403,
     )
+    quotation = quote(db, lot)
     require(
-        lot["currency"] == data.currency, "La moneda contractual debe coincidir con la del lote"
+        quotation["currency"] == data.currency,
+        "La moneda contractual debe coincidir con la cotización",
     )
+    if lot["pricing_unit"] != "fixed":
+        require(
+            data.quote_token == quotation["quote_token"],
+            "El área o la tarifa cambió. Seleccione de nuevo el lote para actualizar el precio",
+            409,
+        )
+        require(
+            cents(data.price) == quotation["price"],
+            "El precio se calcula con el área y la tarifa del superusuario",
+            409,
+        )
     require(
         client["status"] == "active", "Cliente inhabilitado; reactívelo antes de contratar", 409
     )
@@ -113,6 +128,9 @@ def create_sale(db, user, entity, data):
             now(),
         ),
     ).lastrowid
+    db.execute(
+        "UPDATE contracts SET pricing_snapshot=? WHERE id=?", (json.dumps(quotation), identifier)
+    )
     schedule(db, identifier, price, down, data.installments, data.down_due, data.first_due)
     db.execute("UPDATE lots SET status='sold' WHERE id=?", (lot["id"],))
     result = row(db, "contracts", identifier)

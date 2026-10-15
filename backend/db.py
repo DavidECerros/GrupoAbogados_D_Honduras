@@ -58,7 +58,7 @@ def initialize():
 def migrate(db):
     """Upgrade existing v1 databases without replacing any customer records."""
     version = db.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
-    if version not in (1, 2):
+    if version not in (1, 2, 3):
         raise ValueError("Esquema incompatible")
     db.execute("BEGIN IMMEDIATE")
     try:
@@ -67,8 +67,35 @@ def migrate(db):
             db.execute(
                 "ALTER TABLE clients ADD COLUMN status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','inactive'))"
             )
+        additions = {
+            "lots": {
+                "area_m2": "TEXT NOT NULL DEFAULT '0'",
+                "pricing_unit": "TEXT NOT NULL DEFAULT 'fixed' CHECK(pricing_unit IN ('fixed','m2','v2'))",
+            },
+            "users": {
+                "profile": "TEXT NOT NULL DEFAULT 'standard' CHECK(profile IN ('standard','administrator'))",
+                "permissions": "TEXT",
+            },
+            "contracts": {"pricing_snapshot": "TEXT"},
+        }
+        for table, fields in additions.items():
+            existing = {r[1] for r in db.execute(f"PRAGMA table_info({table})")}
+            for name, definition in fields.items():
+                if name not in existing:
+                    db.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS land_plans(id INTEGER PRIMARY KEY,entity_id INTEGER NOT NULL REFERENCES entities(id),lot_id INTEGER,title TEXT NOT NULL,payload TEXT NOT NULL,geometry TEXT NOT NULL,created_by INTEGER NOT NULL REFERENCES users(id),created_at TEXT NOT NULL,updated_at TEXT NOT NULL,FOREIGN KEY(lot_id,entity_id) REFERENCES lots(id,entity_id))"
+        )
+        for key, value in {
+            "price_m2": "",
+            "price_v2": "",
+            "land_currency": "HNL",
+            "vara_m2": "0.697224",
+            "land_rate_updated": "",
+        }.items():
+            db.execute("INSERT OR IGNORE INTO settings VALUES(?,?)", (key, value))
         db.execute("DELETE FROM schema_version")
-        db.execute("INSERT INTO schema_version VALUES(2)")
+        db.execute("INSERT INTO schema_version VALUES(3)")
         db.commit()
     except BaseException:
         db.rollback()
