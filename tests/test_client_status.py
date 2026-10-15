@@ -101,7 +101,7 @@ def test_migrate_old_database_keeps_clients(portfolio):
         row = db.execute("SELECT * FROM clients WHERE id=?", (customer["id"],)).fetchone()
         assert row["name"] == customer["name"]
         assert row["status"] == "active"
-        assert db.execute("SELECT version FROM schema_version").fetchall()[0][0] == 3
+        assert db.execute("SELECT version FROM schema_version").fetchall()[0][0] == 4
 
 
 def test_restore_legacy_backup_migrates_clients(portfolio):

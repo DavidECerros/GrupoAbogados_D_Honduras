@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Download, FileCheck, Landmark, Wallet } from "lucide-react";
 import { api, label, money } from "./api";
 import { Details } from "./details";
+import { RecordActions, RequestReason } from "./record-tools";
 import {
   Badge,
   Empty,
@@ -381,6 +382,7 @@ export function Transactions({ entity, admin, version, notify }) {
 }
 
 export function Approvals({ entity, admin, version, refresh, notify }) {
+  const [editing, setEditing] = useState(null);
   const [page, setPage] = useState(1),
     [selected, setSelected] = useState(null),
     [approve, setApprove] = useState(true),
@@ -421,16 +423,31 @@ export function Approvals({ entity, admin, version, refresh, notify }) {
               render: (r) =>
                 admin &&
                 r.status === "pending" && (
-                  <button
-                    className="text-button"
-                    onClick={() => {
-                      setSelected(r);
-                      setReason("");
-                      setApprove(true);
-                    }}
-                  >
-                    Revisar
-                  </button>
+                  <div className="row-actions">
+                    <button
+                      className="text-button"
+                      onClick={() => {
+                        setSelected(r);
+                        setReason("");
+                        setApprove(true);
+                      }}
+                    >
+                      Revisar
+                    </button>
+                    <button
+                      className="text-button"
+                      onClick={() => setEditing(r)}
+                    >
+                      Modificar motivo
+                    </button>
+                    <RecordActions
+                      kind="approvals"
+                      record={r}
+                      admin={admin}
+                      refresh={refresh}
+                      notify={notify}
+                    />
+                  </div>
                 ),
             },
           ]}
@@ -482,6 +499,14 @@ export function Approvals({ entity, admin, version, refresh, notify }) {
             </Field>
           </Form>
         </Modal>
+      )}
+      {editing && (
+        <RequestReason
+          record={editing}
+          onClose={() => setEditing(null)}
+          refresh={refresh}
+          notify={notify}
+        />
       )}
     </>
   );

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Check,
   ChevronLeft,
@@ -135,21 +135,18 @@ export function SearchBox({ value, onChange, placeholder = "Buscar…" }) {
   );
 }
 export function Modal({ title, children, onClose, wide = false }) {
+  const dialogRef = useRef(null);
   useEffect(() => {
-    const handler = (e) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handler);
     const previous = document.activeElement;
-    const dialog = document.querySelector("dialog");
+    const dialog = dialogRef.current;
     if (dialog && !dialog.open) dialog.showModal();
     return () => {
-      window.removeEventListener("keydown", handler);
       previous?.focus?.();
     };
   }, []);
   return (
     <dialog
+      ref={dialogRef}
       className={wide ? "wide" : ""}
       onCancel={(e) => {
         e.preventDefault();
@@ -158,7 +155,12 @@ export function Modal({ title, children, onClose, wide = false }) {
     >
       <div className="modal-heading">
         <h2>{title}</h2>
-        <button className="icon" aria-label="Cerrar" onClick={onClose}>
+        <button
+          type="button"
+          className="icon"
+          aria-label="Cerrar"
+          onClick={onClose}
+        >
           <X size={20} />
         </button>
       </div>
@@ -191,7 +193,12 @@ export function Form({
     }
   }
   return (
-    <form onSubmit={send}>
+    <form
+      onSubmit={send}
+      onInvalidCapture={(e) =>
+        setError(e.target.validationMessage || "Revisa los campos obligatorios")
+      }
+    >
       {children}
       {confirm && (
         <label className="confirmation">

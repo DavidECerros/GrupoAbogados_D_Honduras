@@ -3,6 +3,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Download, MapPin, Plus } from "lucide-react";
 import { api } from "./api";
+import { RecordActions, RecordFilter } from "./record-tools";
 import {
   Field,
   Form,
@@ -202,10 +203,22 @@ function LandMap({ geometry, onPoint, canAdd }) {
   );
 }
 
-export function Plans({ entity, today, version, refresh, notify, writable }) {
+export function Plans({
+  entity,
+  today,
+  version,
+  refresh,
+  notify,
+  writable,
+  admin,
+}) {
   const [page, setPage] = useState(1),
-    [editing, setEditing] = useState(null);
-  const list = useList(`/entities/${entity}/plans?page=${page}`, version);
+    [editing, setEditing] = useState(null),
+    [view, setView] = useState("active");
+  const list = useList(
+    `/entities/${entity}/plans?page=${page}&view=${view}`,
+    version,
+  );
   const open = async (id) => {
     try {
       setEditing(await api(`/plans/${id}`));
@@ -216,6 +229,13 @@ export function Plans({ entity, today, version, refresh, notify, writable }) {
   return (
     <>
       <div className="toolbar">
+        <RecordFilter
+          value={view}
+          onChange={(v) => {
+            setView(v);
+            setPage(1);
+          }}
+        />
         <p>Planos con área, escala, norte, medidas y colindancias.</p>
         {writable && (
           <button
@@ -256,12 +276,23 @@ export function Plans({ entity, today, version, refresh, notify, writable }) {
               title: "",
               render: (r) => (
                 <div className="row-actions">
-                  <button className="text-button" onClick={() => open(r.id)}>
+                  <button
+                    disabled={Boolean(r.deleted_at)}
+                    className="text-button"
+                    onClick={() => open(r.id)}
+                  >
                     Ver {writable ? "/ editar" : "plano"}
                   </button>
                   <a className="text-button" href={`/api/plans/${r.id}/pdf`}>
                     <Download size={15} /> PDF
                   </a>
+                  <RecordActions
+                    kind="plans"
+                    record={r}
+                    admin={admin}
+                    refresh={refresh}
+                    notify={notify}
+                  />
                 </div>
               ),
             },

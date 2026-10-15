@@ -9,6 +9,7 @@ import {
   Download,
 } from "lucide-react";
 import { CatalogImport } from "./data-tools";
+import { EntityRates, RecordActions, RecordFilter } from "./record-tools";
 import { api, money } from "./api";
 import {
   Badge,
@@ -41,10 +42,12 @@ export function Catalog({
     [statusReason, setStatusReason] = useState(""),
     [importing, setImporting] = useState(false),
     [deleting, setDeleting] = useState(null);
+  const [view, setView] = useState("active"),
+    [rates, setRates] = useState(null);
   const global = kind === "entities";
   const path = global
     ? "/entities"
-    : `/entities/${entity}/${kind}?q=${encodeURIComponent(q)}&page=${page}&state=${state}`;
+    : `/entities/${entity}/${kind}?q=${encodeURIComponent(q)}&page=${page}&state=${view === "deleted" ? "" : state}&view=${view}`;
   const { items, total, busy, error } = useList(path, version);
   const isClient = kind === "clients",
     isLot = kind === "lots";
@@ -125,7 +128,7 @@ export function Catalog({
     title: "",
     render: (r) => (
       <div className="row-actions">
-        {writable && (isClient || isLot || admin) && (
+        {writable && !r.deleted_at && (isClient || isLot || admin) && (
           <button
             className="icon"
             aria-label={"Editar " + title}
@@ -134,7 +137,7 @@ export function Catalog({
             <Edit3 size={16} />
           </button>
         )}
-        {isClient && admin && (
+        {isClient && admin && !r.deleted_at && (
           <button
             className="icon"
             title={
@@ -182,14 +185,28 @@ export function Catalog({
             />
           </label>
         )}
-        {global && (
-          <button
-            className="icon"
-            aria-label={"Eliminar " + r.name}
-            onClick={() => setDeleting(r)}
-          >
-            <Trash2 size={16} />
+        {!global && (
+          <RecordActions
+            kind={kind}
+            record={r}
+            admin={admin}
+            refresh={refresh}
+            notify={notify}
+          />
+        )}
+        {global && admin && (
+          <button className="text-button" onClick={() => setRates(r)}>
+            Tarifas m² / vara²
           </button>
+        )}
+        {global && (
+          <RecordActions
+            kind="entities"
+            record={r}
+            admin={admin}
+            refresh={refresh}
+            notify={notify}
+          />
         )}
       </div>
     ),
@@ -197,6 +214,15 @@ export function Catalog({
   return (
     <>
       <div className="toolbar">
+        {admin && (
+          <RecordFilter
+            value={view}
+            onChange={(value) => {
+              setView(value);
+              setPage(1);
+            }}
+          />
+        )}
         <SearchBox
           value={q}
           onChange={(value) => {
@@ -241,7 +267,7 @@ export function Catalog({
         {!global && (
           <a
             className="secondary"
-            href={`/api/entities/${entity}/catalogs/${kind}/export.xlsx?q=${encodeURIComponent(q)}&state=${state}`}
+            href={`/api/entities/${entity}/catalogs/${kind}/export.xlsx?q=${encodeURIComponent(q)}&state=${view === "deleted" ? "" : state}&view=${view}`}
           >
             <Download size={16} /> Exportar Excel
           </a>
@@ -271,8 +297,12 @@ export function Catalog({
           columns={columns}
           rows={
             global
-              ? items.filter((r) =>
-                  r.name.toLowerCase().includes(q.toLowerCase()),
+              ? items.filter(
+                  (r) =>
+                    r.name.toLowerCase().includes(q.toLowerCase()) &&
+                    (view === "all" ||
+                      r.status ===
+                        (view === "deleted" ? "archived" : "active")),
                 )
               : items
           }
@@ -370,6 +400,7 @@ export function Catalog({
       )}
       {editing && (
         <CatalogForm
+          key={kind + "-" + (editing.id || "new")}
           kind={kind}
           initial={editing}
           entity={entity}
@@ -380,6 +411,16 @@ export function Catalog({
             setEditing(null);
             refresh();
             notify("Datos guardados");
+          }}
+        />
+      )}
+      {rates && (
+        <EntityRates
+          entity={rates}
+          notify={notify}
+          onClose={() => {
+            setRates(null);
+            refresh();
           }}
         />
       )}
@@ -425,11 +466,15 @@ function CatalogForm({
   );
   const update = (key, value) => setData((prev) => ({ ...prev, [key]: value }));
   const [areaUnit, setAreaUnit] = useState("m2"),
-    [conversion, setConversion] = useState(0.697224);
+    [conversion, setConversion] = useState(0.697224),
+    [prices, setPrices] = useState(null);
   useEffect(() => {
     if (lot)
-      api("/land-prices")
-        .then((r) => setConversion(Number(r.vara_m2)))
+      api(`/entities/${entity}/land-prices`)
+        .then((r) => {
+          setConversion(Number(r.vara_m2));
+          setPrices(r);
+        })
         .catch(() => {});
   }, []);
   async function save() {
@@ -444,6 +489,10 @@ function CatalogForm({
         body: lot
           ? {
               ...data,
+              price:
+                data.pricing_unit === "fixed"
+                  ? data.price
+                  : data.price || "0.01",
               ...(areaUnit === "v2"
                 ? { area_v2: data.area_m2 || "0", area_m2: "0" }
                 : { area_m2: data.area_m2 || "0" }),
@@ -509,6 +558,25 @@ function CatalogForm({
             </>
           ) : lot ? (
             <>
+              <Select
+                title="Cómo se determina el precio del lote"
+                options={[
+                  {
+                    value: "fixed",
+                    label: "Precio total fijo: usar el valor ingresado",
+                  },
+                  {
+                    value: "m2",
+                    label: "Por m²: usar tarifa de esta lotificadora",
+                  },
+                  {
+                    value: "v2",
+                    label: "Por vara²: usar tarifa de esta lotificadora",
+                  },
+                ]}
+                value={data.pricing_unit}
+                onChange={(e) => update("pricing_unit", e.target.value)}
+              />
               <Input
                 title="Código del lote"
                 required
@@ -520,15 +588,27 @@ function CatalogForm({
                 value={data.description}
                 onChange={(e) => update("description", e.target.value)}
               />
-              <Input
-                title="Precio base"
-                type="number"
-                step="0.01"
-                min="0.01"
-                required
-                value={data.price}
-                onChange={(e) => update("price", e.target.value)}
-              />
+              {data.pricing_unit === "fixed" ? (
+                <Input
+                  title="Precio total fijo del lote"
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  required
+                  value={data.price}
+                  onChange={(e) => update("price", e.target.value)}
+                />
+              ) : (
+                <p className="info-box">
+                  Precio por superficie. Se usa la tarifa de esta lotificadora:{" "}
+                  {prices?.currency}{" "}
+                  {data.pricing_unit === "m2"
+                    ? prices?.price_m2 || "Sin configurar"
+                    : prices?.price_v2 || "Sin configurar"}{" "}
+                  por {data.pricing_unit === "m2" ? "m²" : "vara²"}. Para vender
+                  por un total como 250,000, selecciona Precio total fijo.
+                </p>
+              )}
               <Select
                 title="Unidad para ingresar el área"
                 options={[
@@ -567,16 +647,7 @@ function CatalogForm({
                   (areaUnit === "m2" ? " vara²" : " m²")
                 }
               />
-              <Select
-                title="Calcular precio de nuevos contratos"
-                options={[
-                  { value: "fixed", label: "Precio fijo (lotes anteriores)" },
-                  { value: "m2", label: "Área × tarifa por m²" },
-                  { value: "v2", label: "Área × tarifa por vara²" },
-                ]}
-                value={data.pricing_unit}
-                onChange={(e) => update("pricing_unit", e.target.value)}
-              />
+
               <Select
                 title="Moneda"
                 options={["HNL", "USD"]}
@@ -616,7 +687,8 @@ export function Users({ entities, version, refresh, notify }) {
   const { items, busy, error } = useList("/users", version);
   const [editing, setEditing] = useState(null),
     [reset, setReset] = useState(null),
-    [password, setPassword] = useState("");
+    [password, setPassword] = useState(""),
+    [view, setView] = useState("active");
   return (
     <>
       <div className="toolbar">
@@ -624,6 +696,7 @@ export function Users({ entities, version, refresh, notify }) {
           Asigna rol, lotificadoras y acceso por módulo. Solo el superusuario
           modifica tarifas y permisos.
         </p>
+        <RecordFilter value={view} onChange={setView} />
         <button className="primary" onClick={() => setEditing({})}>
           <Plus size={16} /> Nuevo usuario
         </button>
@@ -632,7 +705,9 @@ export function Users({ entities, version, refresh, notify }) {
       <div className="panel">
         <Table
           busy={busy}
-          rows={items}
+          rows={items.filter(
+            (r) => view === "all" || Boolean(r.active) === (view === "active"),
+          )}
           columns={[
             {
               key: "full_name",
@@ -687,6 +762,15 @@ export function Users({ entities, version, refresh, notify }) {
                   >
                     Restablecer contraseña
                   </button>
+                  {r.role !== "superuser" && (
+                    <RecordActions
+                      kind="users"
+                      record={r}
+                      admin
+                      refresh={refresh}
+                      notify={notify}
+                    />
+                  )}
                 </div>
               ),
             },

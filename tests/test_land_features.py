@@ -29,6 +29,16 @@ def rates(c, **values):
     body.update(values)
     result = c.put("/api/settings", json=body)
     assert result.status_code == 200, result.text
+    for entity in c.get("/api/entities").json():
+        old = c.get(f"/api/entities/{entity['id']}/land-prices").json()
+        scoped = {k: old.get(k) for k in ("price_m2", "price_v2", "currency")}
+        for key in ("price_m2", "price_v2"):
+            if key in values:
+                scoped[key] = values[key]
+        if "land_currency" in values:
+            scoped["currency"] = values["land_currency"]
+        response = c.put(f"/api/entities/{entity['id']}/land-prices", json=scoped)
+        assert response.status_code == 200, response.text
 
 
 def sale_data(lot, customer, q):

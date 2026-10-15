@@ -1,4 +1,12 @@
-# Evidencia de aceptación de la versión 0.2.0
+# Evidencia de aceptación de la versión 0.2.1
+
+Verificación adicional: 14 de octubre de 2026. Pasan 86 pruebas automatizadas,
+Ruff, ESLint y compilación. En navegador se guardó el mismo lote dos veces,
+se eliminó y restauró, se comprobó 250,000 − 10,000 = 240,000 y se cambió la
+tarifa de una lotificadora conservando la otra. Los datos son ficticios y están
+separados de la instalación de trabajo. Se verifican respaldos y migración al
+esquema 4, permisos de superusuario, anulación financiera y edición de metadatos
+sin alterar importes ni folios. La evidencia de 0.2.0 continúa a continuación.
 
 Verificación adicional: 14 de octubre de 2026. Pasan 75 pruebas automatizadas,
 Ruff, ESLint y compilación de producción. Se comprobaron en el navegador el

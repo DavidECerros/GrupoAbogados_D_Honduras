@@ -1,5 +1,24 @@
 # Registro de versiones
 
+## 0.2.1 — 14 de octubre de 2026
+
+- Tarifas por m², vara² y moneda independientes por lotificadora, editables solo
+  por el superusuario desde Configuración o Lotificadoras. Migración que conserva
+  la tarifa anterior una sola vez y no recalcula contratos existentes.
+- Precio fijo y cálculo por superficie diferenciados en el formulario de lote;
+  el valor manual deja de mostrarse como editable mientras se usa una tarifa.
+- Desglose explícito del precio total menos prima en Nueva venta.
+- Corrección del manejo de ventanas de formularios y validación visible de campos.
+- Eliminación recuperable y restauración para clientes, lotes y planos; liberación
+  y archivo de reservas, archivo de lotificadoras y desactivación de usuarios.
+- Anulación/reactivación de contratos con comprobación de cobros y disponibilidad.
+  Los cobros se anulan conservando sus recibos e historial, sin borrado físico.
+- Edición de reservas, datos de cobros y motivos de solicitudes pendientes.
+- Confirmación, motivo, respaldo previo y auditoría para bajas/restauraciones.
+- Esquema 4 y restauración de respaldos anteriores. 86 pruebas de backend,
+  Ruff, ESLint y compilación de producción; edición repetida, borrado/restauración,
+  precio fijo con prima y tarifas independientes comprobados en navegador.
+
 ## 0.2.0 — 14 de octubre de 2026
 
 - Áreas de lotes en m² y varas², selección de unidad de venta y tarifas por

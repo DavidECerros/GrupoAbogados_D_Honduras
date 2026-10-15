@@ -73,6 +73,11 @@ def create_sale(db, user, entity, data):
     authorize(db, user, entity, True)
     lot, client = row(db, "lots", data.lot_id), row(db, "clients", data.client_id)
     require(
+        not lot["deleted_at"] and not client["deleted_at"],
+        "Restaure el lote o cliente antes de contratar",
+        409,
+    )
+    require(
         lot["entity_id"] == entity and client["entity_id"] == entity,
         "Registros de otra entidad",
         403,
@@ -180,6 +185,7 @@ def statement(db, user, identifier):
 
 def create_payment(db, user, data):
     contract = row(db, "contracts", data.contract_id)
+    require(contract["status"] == "active", "El contrato está anulado; no admite cobros", 409)
     entity = authorize(db, user, contract["entity_id"], True)
     canonical = data.model_dump(mode="json")
     fingerprint = hashlib.sha256(json.dumps(canonical, sort_keys=True).encode()).hexdigest()
@@ -352,6 +358,7 @@ def release_reservation(db, user, identifier, reason):
 def transfer_contract(db, user, identifier, data):
     admin(user)
     contract = row(db, "contracts", identifier)
+    require(contract["status"] == "active", "El contrato está anulado", 409)
     authorize(db, user, contract["entity_id"], True)
     client = row(db, "clients", data.new_client_id)
     require(client["entity_id"] == contract["entity_id"], "Cliente de otra entidad", 403)
@@ -398,6 +405,7 @@ def transfer_contract(db, user, identifier, data):
 def amend_contract(db, user, identifier, data):
     admin(user)
     contract = row(db, "contracts", identifier)
+    require(contract["status"] == "active", "El contrato está anulado", 409)
     authorize(db, user, contract["entity_id"], True)
     price, down = cents(data.price), cents(data.down_payment)
     require(down <= price, "Prima mayor que el precio")

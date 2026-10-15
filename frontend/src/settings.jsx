@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Archive, Download, RotateCcw, ShieldCheck } from "lucide-react";
 import { api } from "./api";
 import { Form, Input, Modal, Select, Table, useList } from "./components";
+import { EntityRates } from "./record-tools";
 
 export function Settings({ version, refresh, notify, onRestored }) {
   const [data, setData] = useState(null),
@@ -10,6 +11,8 @@ export function Settings({ version, refresh, notify, onRestored }) {
     [file, setFile] = useState(null),
     [confirmation, setConfirmation] = useState("");
   const backups = useList("/backups", version);
+  const entities = useList("/entities", version);
+  const [rates, setRates] = useState(null);
   useEffect(() => {
     api("/settings")
       .then((result) =>
@@ -29,6 +32,16 @@ export function Settings({ version, refresh, notify, onRestored }) {
   const update = (key, value) => setData((prev) => ({ ...prev, [key]: value }));
   return (
     <>
+      {rates && (
+        <EntityRates
+          entity={rates}
+          notify={notify}
+          onClose={() => {
+            setRates(null);
+            refresh();
+          }}
+        />
+      )}
       {error && <p className="error">{error}</p>}
       <div className="settings-grid">
         <section className="panel padded">
@@ -65,30 +78,25 @@ export function Settings({ version, refresh, notify, onRestored }) {
                 onChange={(e) => update("timezone", e.target.value)}
                 hint="Por ejemplo: America/Tegucigalpa"
               />
-              <h3>Tarifas para nuevas ventas · Solo superusuario</h3>
-              <Select
-                title="Moneda de las tarifas de terreno"
-                options={["HNL", "USD"]}
-                value={data.land_currency}
-                onChange={(e) => update("land_currency", e.target.value)}
-              />
-              <Input
-                title="Precio por metro cuadrado (m²)"
-                type="number"
-                min="0.0001"
-                step="0.0001"
-                value={data.price_m2}
-                onChange={(e) => update("price_m2", e.target.value)}
-              />
-              <Input
-                title="Precio por vara cuadrada (vara²)"
-                type="number"
-                min="0.0001"
-                step="0.0001"
-                value={data.price_v2}
-                onChange={(e) => update("price_v2", e.target.value)}
-                hint="Cada lote selecciona su unidad de venta. Los contratos existentes conservan su tarifa."
-              />
+              <h3>Tarifas independientes por lotificadora</h3>
+              <p>
+                Cada lotificadora tiene sus precios por m² y vara². Solo el
+                superusuario puede modificarlos.
+              </p>
+              <div className="stack-actions">
+                {entities.items
+                  .filter((e) => e.status === "active")
+                  .map((e) => (
+                    <button
+                      key={e.id}
+                      type="button"
+                      className="secondary"
+                      onClick={() => setRates(e)}
+                    >
+                      Configurar tarifas · {e.name}
+                    </button>
+                  ))}
+              </div>
               <Input
                 title="Conversión: m² por una vara²"
                 type="number"

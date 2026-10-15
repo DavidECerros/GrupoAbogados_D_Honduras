@@ -40,6 +40,7 @@ from .finance import (
     void_payment,
 )
 from .land_api import register as register_land_routes
+from .record_tools import register as register_record_routes
 
 HASHER = PasswordHasher(time_cost=3, memory_cost=19456, parallelism=1)
 DUMMY_HASH = HASHER.hash(secrets.token_hex(24))
@@ -55,7 +56,7 @@ async def lifespan(app):
 
 app = FastAPI(
     title="Grupo Abogados D Honduras",
-    version="0.2.0",
+    version="0.2.1",
     docs_url=None,
     redoc_url=None,
     openapi_url=None,
@@ -509,6 +510,7 @@ def delete_entity(identifier: int, user: User, db: DB):
             "Entidad con historial: debe archivarse",
             409,
         )
+    db.execute("DELETE FROM entity_prices WHERE entity_id=?", (identifier,))
     db.execute("DELETE FROM entities WHERE id=?", (identifier,))
     audit(db, user, "delete_entity", kind="entity", record=identifier)
     return {"ok": True}
@@ -543,12 +545,22 @@ def pagination(page, size):
 
 @app.get("/api/entities/{entity}/clients")
 def clients(
-    entity: int, user: User, db: DB, q: str = "", page: int = 1, size: int = 30, state: str = ""
+    entity: int,
+    user: User,
+    db: DB,
+    q: str = "",
+    page: int = 1,
+    size: int = 30,
+    state: str = "",
+    view: str = "active",
 ):
     authorize(db, user, entity)
     limit, offset = pagination(page, size)
     filters = (entity, f"%{q}%", f"%{q}%")
     where = "entity_id=? AND (name LIKE ? OR document LIKE ?)"
+    require(view in ("active", "deleted", "all"), "Vista inválida")
+    if view != "all":
+        where += " AND deleted_at IS " + ("NOT " if view == "deleted" else "") + "NULL"
     require(state in ("", "active", "inactive"), "Estado de cliente inválido")
     if state:
         where += " AND status=?"
@@ -590,6 +602,7 @@ def create_client(entity: int, data: m.Client, user: User, db: DB):
 @app.put("/api/clients/{identifier}")
 def edit_client(identifier: int, data: m.Client, user: User, db: DB):
     previous = row(db, "clients", identifier)
+    require(not previous["deleted_at"], "Restaure el cliente antes de editarlo", 409)
     authorize(db, user, previous["entity_id"], True)
     if user["role"] != "superuser" and user.get("profile") != "administrator":
         require(
@@ -649,11 +662,21 @@ def change_client_status(identifier: int, data: m.ClientStatus, user: User, db: 
 
 @app.get("/api/entities/{entity}/lots")
 def lots(
-    entity: int, user: User, db: DB, q: str = "", state: str = "", page: int = 1, size: int = 30
+    entity: int,
+    user: User,
+    db: DB,
+    q: str = "",
+    state: str = "",
+    page: int = 1,
+    size: int = 30,
+    view: str = "active",
 ):
     authorize(db, user, entity)
     limit, offset = pagination(page, size)
     where = "entity_id=? AND (code LIKE ? OR description LIKE ?) AND (?='' OR status=?)"
+    require(view in ("active", "deleted", "all"), "Vista inválida")
+    if view != "all":
+        where += " AND deleted_at IS " + ("NOT " if view == "deleted" else "") + "NULL"
     filters = (entity, f"%{q}%", f"%{q}%", state, state)
     return {
         "items": [
@@ -692,6 +715,7 @@ def create_lot(entity: int, data: m.Lot, user: User, db: DB):
 def edit_lot(identifier: int, data: m.Lot, user: User, db: DB):
     permissions.check(user, "lots", True)
     previous = row(db, "lots", identifier)
+    require(not previous["deleted_at"], "Restaure el lote antes de editarlo", 409)
     authorize(db, user, previous["entity_id"], True)
     db.execute(
         "UPDATE lots SET code=?,description=?,price=?,currency=?,area_m2=?,pricing_unit=? WHERE id=?",
@@ -720,19 +744,29 @@ def edit_lot(identifier: int, data: m.Lot, user: User, db: DB):
 
 
 @app.get("/api/entities/{entity}/reservations")
-def reservations(entity: int, user: User, db: DB, page: int = 1, size: int = 30):
+def reservations(
+    entity: int, user: User, db: DB, page: int = 1, size: int = 30, view: str = "active"
+):
     authorize(db, user, entity)
     limit, offset = pagination(page, size)
+    require(view in ("active", "deleted", "all"), "Vista inválida")
+    archived = (
+        ""
+        if view == "all"
+        else " AND r.deleted_at IS " + ("NOT " if view == "deleted" else "") + "NULL"
+    )
     return {
         "items": [
             dict(r)
             for r in db.execute(
-                "SELECT r.*,l.code lot,c.name client,CASE WHEN r.status='active' AND r.expires_on<? THEN 1 ELSE 0 END expired FROM reservations r JOIN lots l ON l.id=r.lot_id JOIN clients c ON c.id=r.client_id WHERE r.entity_id=? ORDER BY r.id DESC LIMIT ? OFFSET ?",
+                "SELECT r.*,l.code lot,c.name client,CASE WHEN r.status='active' AND r.expires_on<? THEN 1 ELSE 0 END expired FROM reservations r JOIN lots l ON l.id=r.lot_id JOIN clients c ON c.id=r.client_id WHERE r.entity_id=?"
+                + archived
+                + " ORDER BY r.id DESC LIMIT ? OFFSET ?",
                 (str(today(db)), entity, limit, offset),
             )
         ],
         "total": db.execute(
-            "SELECT COUNT(*) FROM reservations WHERE entity_id=?", (entity,)
+            "SELECT COUNT(*) FROM reservations r WHERE entity_id=?" + archived, (entity,)
         ).fetchone()[0],
     }
 
@@ -741,6 +775,11 @@ def reservations(entity: int, user: User, db: DB, page: int = 1, size: int = 30)
 def reserve(entity: int, data: m.Reservation, user: User, db: DB):
     authorize(db, user, entity, True)
     lot, client = row(db, "lots", data.lot_id), row(db, "clients", data.client_id)
+    require(
+        not lot["deleted_at"] and not client["deleted_at"],
+        "Restaure el lote o cliente antes de reservar",
+        409,
+    )
     require(
         lot["entity_id"] == entity and client["entity_id"] == entity,
         "Registros de otra entidad",
@@ -773,10 +812,21 @@ def release(identifier: int, data: m.Reason, user: User, db: DB):
 
 
 @app.get("/api/entities/{entity}/contracts")
-def contracts(entity: int, user: User, db: DB, q: str = "", page: int = 1, size: int = 30):
+def contracts(
+    entity: int,
+    user: User,
+    db: DB,
+    q: str = "",
+    page: int = 1,
+    size: int = 30,
+    view: str = "active",
+):
     authorize(db, user, entity)
     limit, offset = pagination(page, size)
     base = "FROM contracts c JOIN clients cl ON cl.id=c.client_id JOIN lots l ON l.id=c.lot_id WHERE c.entity_id=? AND (cl.name LIKE ? OR cl.document LIKE ? OR l.code LIKE ?)"
+    require(view in ("active", "deleted", "all"), "Vista inválida")
+    if view != "all":
+        base += " AND c.status=" + ("'cancelled'" if view == "deleted" else "'active'")
     filters = (entity, f"%{q}%", f"%{q}%", f"%{q}%")
     return {
         "items": [
@@ -979,7 +1029,10 @@ def dashboard(user: User, db: DB, entity: int | None = None, month: str = ""):
     lots = {
         r["status"]: r["count"]
         for r in db.execute(
-            "SELECT status,COUNT(*) count FROM lots WHERE 1=1" + where + " GROUP BY status", args
+            "SELECT status,COUNT(*) count FROM lots WHERE deleted_at IS NULL"
+            + where
+            + " GROUP BY status",
+            args,
         )
     }
     months = []
@@ -1443,10 +1496,12 @@ def catalog_template(kind: str, user: User, db: DB):
 
 
 @app.get("/api/entities/{entity}/catalogs/{kind}/export.xlsx")
-def catalog_export(entity: int, kind: str, user: User, db: DB, q: str = "", state: str = ""):
+def catalog_export(
+    entity: int, kind: str, user: User, db: DB, q: str = "", state: str = "", view: str = "active"
+):
     catalog_io.kind_valid(kind)
     authorize(db, user, entity)
-    content = catalog_io.export_catalog(db, entity, kind, q, state)
+    content = catalog_io.export_catalog(db, entity, kind, q, state, view)
     audit(db, user, "export_" + kind, entity, kind="export", after={"search": q, "state": state})
     return Response(
         content,
@@ -1620,6 +1675,7 @@ def database_location(data: m.DataLocation, user: User, db: DB):
 
 
 register_land_routes(app, User, DB)
+register_record_routes(app, User, DB)
 
 STATIC = Path(__file__).resolve().parents[1] / "frontend" / "dist"
 if STATIC.exists():

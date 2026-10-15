@@ -80,6 +80,25 @@ class DataLocation(Model):
     confirmation: str
 
 
+class LandRates(Model):
+    price_m2: Decimal | None = Field(default=None, gt=0, max_digits=14, decimal_places=4)
+    price_v2: Decimal | None = Field(default=None, gt=0, max_digits=14, decimal_places=4)
+    currency: Literal["HNL", "USD"] = "HNL"
+
+
+class Lifecycle(Model):
+    reason: str = Field(min_length=3, max_length=2000)
+    action: Literal["delete", "restore"] = "delete"
+
+
+class PaymentEdit(Model):
+    payment_date: date
+    method: Literal["cash", "deposit", "transfer"]
+    bank_reference: str = Field(default="", max_length=150)
+    notes: str = Field(default="", max_length=2000)
+    reason: str = Field(min_length=3, max_length=2000)
+
+
 class Lot(Model):
     code: str = Field(min_length=1, max_length=80)
     description: str = Field(max_length=2000, default="")

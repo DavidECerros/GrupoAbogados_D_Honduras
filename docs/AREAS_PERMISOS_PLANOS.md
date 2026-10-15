@@ -1,10 +1,15 @@
-# Áreas, tarifas, usuarios y planos — v0.2.0
+# Áreas, tarifas, usuarios y planos — v0.2.1
 
 ## Preparar las tarifas
 
 Entre como superusuario a Configuración. Junto a la tasa HNL por USD encontrará
-precio por m², precio por vara², moneda de las tarifas y factor de conversión.
-Ambas tarifas son independientes: no se deduce una de la otra.
+Configurar tarifas para cada lotificadora. Cada una tiene precio por m², precio
+por vara² y moneda propios. También puede abrir Lotificadoras → Tarifas m² / vara².
+El factor de conversión de áreas permanece en la configuración de la instalación.
+Ambas tarifas son independientes: no se deduce una de la otra ni se comparte
+su edición con otras lotificadoras. Al migrar desde la versión anterior se
+copia la tarifa anterior a cada entidad una sola vez. Las nuevas lotificadoras
+requieren configurar su propia tarifa antes de vender por superficie.
 El factor inicial es 0.697224 m² por vara², configurable según el levantamiento.
 Guardar tarifas requiere superusuario, incluso si otro usuario es administrador.
 

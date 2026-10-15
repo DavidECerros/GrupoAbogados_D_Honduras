@@ -3,17 +3,18 @@
 Gestor local de lotificadoras, ventas y cobros para Grupo Abogados D Honduras.
 Implementación del documento de requisitos del 29 de septiembre de 2026.
 
-La versión 0.2.0 agrega áreas en m² y varas², precios automáticos según tarifas
-del superusuario, roles y permisos por módulo, planos de reunión de lotes y
-mapa online opcional de Honduras. El plano consulta el propietario desde el
-contrato del lote y utiliza un título fijo. Consulte
+La versión 0.2.1 incorpora tarifas independientes por lotificadora y acciones
+de edición, eliminación recuperable y anulación con respaldo. Distingue el
+precio total fijo del precio calculado por superficie y muestra el desglose
+total menos prima. Mantiene roles, planos de reunión y mapa opcional de Honduras.
+Consulte [edición y eliminación](docs/EDICION_Y_ELIMINACION.md),
 [áreas, permisos y planos](docs/AREAS_PERMISOS_PLANOS.md),
 [administración de datos](docs/ADMINISTRAR_DATOS.md) y
 [opciones online](docs/OPCIONES_ONLINE.md).
 
 ## Estado del proyecto
 
-Primera versión funcional, v0.2.0. Incluye interfaz en español y backend para
+Primera versión funcional, v0.2.1. Incluye interfaz en español y backend para
 autenticación, segregación por entidad, clientes, lotes, reservas, contratos, cuotas,
 cobros, cesiones, autorizaciones, auditoría, recibos PDF, exportación Excel y
 respaldo/restauración. Las verificaciones y límites están en
@@ -30,7 +31,7 @@ formulario para crear el único superusuario.
 
 ## Uso en Windows
 
-El paquete `GrupoAbogados_D_Honduras-Windows-v0.2.0.zip` contiene Python,
+El paquete `GrupoAbogados_D_Honduras-Windows-v0.2.1.zip` contiene Python,
 dependencias y frontend compilado. Extraiga el ZIP en una carpeta local y abra
 `Iniciar.cmd`. El navegador abrirá `http://localhost:8000`.
 Use `CrearAccesoDirecto.ps1` para crear el acceso directo opcional.

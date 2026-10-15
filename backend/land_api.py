@@ -5,6 +5,7 @@ from fastapi import Response
 from . import land_plans, land_pricing, permissions
 from .db import audit, now, setting
 from .finance import authorize, require, row
+from .models import LandRates
 
 
 def register(app, User, DB):
@@ -23,6 +24,41 @@ def register(app, User, DB):
             key: setting(db, key)
             for key in ("price_m2", "price_v2", "land_currency", "vara_m2", "land_rate_updated")
         }
+
+    @app.get("/api/entities/{entity}/land-prices")
+    def scoped_rates(entity: int, user: User, db: DB):
+        authorize(db, user, entity)
+        return {**land_pricing.entity_rates(db, entity), "vara_m2": str(land_pricing.factor(db))}
+
+    @app.put("/api/entities/{entity}/land-prices")
+    def save_rates(entity: int, data: LandRates, user: User, db: DB):
+        from .finance import admin
+
+        admin(user)
+        authorize(db, user, entity, True)
+        previous = land_pricing.entity_rates(db, entity)
+        db.execute(
+            "INSERT INTO entity_prices VALUES(?,?,?,?,?) ON CONFLICT(entity_id) DO UPDATE SET price_m2=excluded.price_m2,price_v2=excluded.price_v2,currency=excluded.currency,updated_at=excluded.updated_at",
+            (
+                entity,
+                str(data.price_m2) if data.price_m2 is not None else None,
+                str(data.price_v2) if data.price_v2 is not None else None,
+                data.currency,
+                now(),
+            ),
+        )
+        result = land_pricing.entity_rates(db, entity)
+        audit(
+            db,
+            user,
+            "update_entity_prices",
+            entity,
+            "entity_prices",
+            entity,
+            before=previous,
+            after=result,
+        )
+        return result
 
     @app.get("/api/lots/{identifier}/quote")
     def quotation(identifier: int, user: User, db: DB):
@@ -212,19 +248,29 @@ def register(app, User, DB):
         return {"id": identifier, "geometry": geo}
 
     @app.get("/api/entities/{entity}/plans")
-    def list_plans(entity: int, user: User, db: DB, page: int = 1, size: int = 30):
+    def list_plans(
+        entity: int, user: User, db: DB, page: int = 1, size: int = 30, view: str = "active"
+    ):
         authorize(db, user, entity)
         require(page > 0 and 1 <= size <= 100, "Paginación inválida")
+        require(view in ("active", "deleted", "all"), "Vista inválida")
+        archived = (
+            ""
+            if view == "all"
+            else " AND deleted_at IS " + ("NOT " if view == "deleted" else "") + "NULL"
+        )
         return {
             "items": [
                 dict(r)
                 for r in db.execute(
-                    "SELECT id,title,lot_id,created_at,updated_at,json_extract(geometry,'$.area_m2') area_m2 FROM land_plans WHERE entity_id=? ORDER BY id DESC LIMIT ? OFFSET ?",
+                    "SELECT id,title,lot_id,deleted_at,created_at,updated_at,json_extract(geometry,'$.area_m2') area_m2 FROM land_plans WHERE entity_id=?"
+                    + archived
+                    + " ORDER BY id DESC LIMIT ? OFFSET ?",
                     (entity, size, (page - 1) * size),
                 )
             ],
             "total": db.execute(
-                "SELECT COUNT(*) FROM land_plans WHERE entity_id=?", (entity,)
+                "SELECT COUNT(*) FROM land_plans WHERE entity_id=?" + archived, (entity,)
             ).fetchone()[0],
         }
 
@@ -244,6 +290,7 @@ def register(app, User, DB):
     @app.put("/api/plans/{identifier}")
     def edit_plan(identifier: int, data: land_plans.Plan, user: User, db: DB):
         previous = get(db, user, identifier)
+        require(not previous["deleted_at"], "Restaure el plano antes de modificarlo", 409)
         validate_lot(db, user, previous["entity_id"], data)
         geo = land_plans.geometry(data, land_pricing.factor(db))
         payload = data.model_dump(mode="json")

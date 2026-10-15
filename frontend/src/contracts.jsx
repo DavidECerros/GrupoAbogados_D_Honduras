@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ArrowRightLeft, Banknote, FileText, Plus } from "lucide-react";
 import { api, money } from "./api";
 import { Details } from "./details";
+import { RecordActions, RecordFilter } from "./record-tools";
 import {
   Badge,
   Field,
@@ -29,14 +30,22 @@ export function Contracts({
   const [q, setQ] = useState(""),
     [page, setPage] = useState(1),
     [create, setCreate] = useState(false),
-    [selected, setSelected] = useState(null);
+    [selected, setSelected] = useState(null),
+    [view, setView] = useState("active");
   const { items, total, busy, error } = useList(
-    `/entities/${entity}/contracts?q=${encodeURIComponent(q)}&page=${page}`,
+    `/entities/${entity}/contracts?q=${encodeURIComponent(q)}&page=${page}&view=${view}`,
     version,
   );
   return (
     <>
       <div className="toolbar">
+        <RecordFilter
+          value={view}
+          onChange={(v) => {
+            setView(v);
+            setPage(1);
+          }}
+        />
         <SearchBox
           value={q}
           onChange={(value) => {
@@ -87,7 +96,7 @@ export function Contracts({
                   >
                     <FileText size={15} /> Estado de cuenta
                   </button>
-                  {r.balance > 0 && (
+                  {r.balance > 0 && r.status === "active" && (
                     <button
                       className="text-button"
                       onClick={() => onCollect(r.id)}
@@ -95,6 +104,13 @@ export function Contracts({
                       <Banknote size={15} /> Cobrar
                     </button>
                   )}
+                  <RecordActions
+                    kind="contracts"
+                    record={r}
+                    admin={admin}
+                    refresh={refresh}
+                    notify={notify}
+                  />
                 </div>
               ),
             },
@@ -210,7 +226,7 @@ function SaleForm({ entity, today, onClose, onSaved }) {
             }
           />
           <Input
-            title={"Precio acordado (" + data.currency + ")"}
+            title={"Precio total del lote (" + data.currency + ")"}
             type="number"
             min="0.01"
             step="0.01"
@@ -266,8 +282,19 @@ function SaleForm({ entity, today, onClose, onSaved }) {
           </p>
         )}
         <div className="info-box">
-          Saldo a financiar: <strong>{money(financed, data.currency)}</strong> ·
-          Cuota estimada:{" "}
+          Precio total:{" "}
+          <strong>
+            {money(Math.round(Number(data.price || 0) * 100), data.currency)}
+          </strong>{" "}
+          − Prima acordada:{" "}
+          <strong>
+            {money(
+              Math.round(Number(data.down_payment || 0) * 100),
+              data.currency,
+            )}
+          </strong>{" "}
+          = Saldo a financiar: <strong>{money(financed, data.currency)}</strong>{" "}
+          · Cuota estimada:{" "}
           {money(
             Math.floor(financed / (Number(data.installments) || 1)),
             data.currency,
@@ -686,6 +713,8 @@ export function Reservations({
 }) {
   const [page, setPage] = useState(1),
     [creating, setCreating] = useState(false),
+    [editingReservation, setEditingReservation] = useState(null),
+    [view, setView] = useState("active"),
     [selected, setSelected] = useState(null),
     [reason, setReason] = useState(""),
     [data, setData] = useState({
@@ -694,17 +723,25 @@ export function Reservations({
       expires_on: today,
     });
   const { items, total, busy, error } = useList(
-    `/entities/${entity}/reservations?page=${page}`,
+    `/entities/${entity}/reservations?page=${page}&view=${view}`,
     version,
   );
   return (
     <>
       <div className="toolbar">
         <p>Las reservas vencidas requieren revisión del superusuario.</p>
+        <RecordFilter
+          value={view}
+          onChange={(v) => {
+            setView(v);
+            setPage(1);
+          }}
+        />
         <button
           className="primary"
           onClick={() => {
             setData({ lot_id: "", client_id: "", expires_on: today });
+            setEditingReservation(null);
             setCreating(true);
           }}
         >
@@ -733,35 +770,73 @@ export function Reservations({
             {
               key: "action",
               title: "",
-              render: (r) =>
-                r.status === "active" && (
-                  <button
-                    className="text-button"
-                    onClick={() => {
-                      setSelected(r);
-                      setReason("");
-                    }}
-                  >
-                    {admin ? "Liberar" : "Solicitar liberación"}
-                  </button>
-                ),
+              render: (r) => (
+                <div className="row-actions">
+                  {r.status === "active" && !r.deleted_at && (
+                    <button
+                      className="text-button"
+                      onClick={() => {
+                        setSelected(r);
+                        setReason("");
+                      }}
+                    >
+                      {admin ? "Liberar" : "Solicitar liberación"}
+                    </button>
+                  )}
+                  {admin && r.status === "active" && !r.deleted_at && (
+                    <button
+                      className="text-button"
+                      onClick={() => {
+                        setData({
+                          lot_id: r.lot_id,
+                          client_id: r.client_id,
+                          expires_on: r.expires_on,
+                        });
+                        setEditingReservation(r);
+                        setCreating(true);
+                      }}
+                    >
+                      Modificar
+                    </button>
+                  )}
+                  <RecordActions
+                    kind="reservations"
+                    record={r}
+                    admin={admin}
+                    refresh={refresh}
+                    notify={notify}
+                  />
+                </div>
+              ),
             },
           ]}
         />
         <Pager total={total} page={page} onChange={setPage} />
       </div>
       {creating && (
-        <Modal title="Nueva reserva" onClose={() => setCreating(false)}>
+        <Modal
+          title={editingReservation ? "Modificar reserva" : "Nueva reserva"}
+          onClose={() => {
+            setCreating(false);
+            setEditingReservation(null);
+          }}
+        >
           <Form
             onCancel={() => setCreating(false)}
             onSubmit={async () => {
-              await api(`/entities/${entity}/reservations`, {
-                method: "POST",
-                body: data,
-              });
+              await api(
+                editingReservation
+                  ? `/reservations/${editingReservation.id}`
+                  : `/entities/${entity}/reservations`,
+                {
+                  method: editingReservation ? "PUT" : "POST",
+                  body: data,
+                },
+              );
               setCreating(false);
+              setEditingReservation(null);
               refresh();
-              notify("Reserva registrada");
+              notify("Reserva guardada");
             }}
             confirm
           >
@@ -777,7 +852,9 @@ export function Reservations({
               entity={entity}
               collection="lots"
               value={data.lot_id}
-              predicate={(r) => r.status === "available"}
+              predicate={(r) =>
+                r.status === "available" || r.id === editingReservation?.lot_id
+              }
               onChange={(id) => setData((prev) => ({ ...prev, lot_id: id }))}
             />
             <Input

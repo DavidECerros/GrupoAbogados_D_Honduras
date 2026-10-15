@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Banknote, Download, Printer } from "lucide-react";
 import { api, label, money } from "./api";
+import { PaymentDetails } from "./record-tools";
 import {
   Badge,
   Field,
@@ -27,10 +28,11 @@ export function Payments({
   const [page, setPage] = useState(1),
     [since, setSince] = useState(""),
     [until, setUntil] = useState(""),
-    [state, setState] = useState(""),
+    [state, setState] = useState("valid"),
     [collect, setCollect] = useState(false),
     [voiding, setVoiding] = useState(null),
-    [reason, setReason] = useState("");
+    [reason, setReason] = useState(""),
+    [editing, setEditing] = useState(null);
   const filters = `${since ? "&since=" + since : ""}${until ? "&until=" + until : ""}&state=${state}`;
   const { items, total, busy, error } = useList(
     `/entities/${entity}/payments?page=${page}${filters}`,
@@ -152,6 +154,14 @@ export function Payments({
                       {admin ? "Anular" : "Solicitar anulación"}
                     </button>
                   )}
+                  {admin && r.status === "valid" && (
+                    <button
+                      className="text-button"
+                      onClick={() => setEditing(r)}
+                    >
+                      Modificar
+                    </button>
+                  )}
                 </div>
               ),
             },
@@ -165,6 +175,14 @@ export function Payments({
           today={today}
           initialContract={selectedContract}
           onClose={closeCollect}
+          refresh={refresh}
+          notify={notify}
+        />
+      )}
+      {editing && (
+        <PaymentDetails
+          record={editing}
+          onClose={() => setEditing(null)}
           refresh={refresh}
           notify={notify}
         />

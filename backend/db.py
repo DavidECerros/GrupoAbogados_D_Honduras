@@ -58,7 +58,7 @@ def initialize():
 def migrate(db):
     """Upgrade existing v1 databases without replacing any customer records."""
     version = db.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
-    if version not in (1, 2, 3):
+    if version not in (1, 2, 3, 4):
         raise ValueError("Esquema incompatible")
     db.execute("BEGIN IMMEDIATE")
     try:
@@ -86,6 +86,23 @@ def migrate(db):
         db.execute(
             "CREATE TABLE IF NOT EXISTS land_plans(id INTEGER PRIMARY KEY,entity_id INTEGER NOT NULL REFERENCES entities(id),lot_id INTEGER,title TEXT NOT NULL,payload TEXT NOT NULL,geometry TEXT NOT NULL,created_by INTEGER NOT NULL REFERENCES users(id),created_at TEXT NOT NULL,updated_at TEXT NOT NULL,FOREIGN KEY(lot_id,entity_id) REFERENCES lots(id,entity_id))"
         )
+        for table in ("clients", "lots", "reservations", "land_plans"):
+            if "deleted_at" not in {r[1] for r in db.execute(f"PRAGMA table_info({table})")}:
+                db.execute(f"ALTER TABLE {table} ADD COLUMN deleted_at TEXT")
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS entity_prices(entity_id INTEGER PRIMARY KEY REFERENCES entities(id),price_m2 TEXT,price_v2 TEXT,currency TEXT NOT NULL CHECK(currency IN ('HNL','USD')),updated_at TEXT NOT NULL)"
+        )
+        for ent in db.execute("SELECT id,currency FROM entities").fetchall():
+            db.execute(
+                "INSERT OR IGNORE INTO entity_prices VALUES(?,?,?,?,?)",
+                (
+                    ent[0],
+                    (setting(db, "price_m2") or None) if version < 4 else None,
+                    (setting(db, "price_v2") or None) if version < 4 else None,
+                    (setting(db, "land_currency") or ent[1]) if version < 4 else ent[1],
+                    now(),
+                ),
+            )
         for key, value in {
             "price_m2": "",
             "price_v2": "",
@@ -95,7 +112,7 @@ def migrate(db):
         }.items():
             db.execute("INSERT OR IGNORE INTO settings VALUES(?,?)", (key, value))
         db.execute("DELETE FROM schema_version")
-        db.execute("INSERT INTO schema_version VALUES(3)")
+        db.execute("INSERT INTO schema_version VALUES(4)")
         db.commit()
     except BaseException:
         db.rollback()
@@ -120,7 +137,7 @@ def transaction():
 
 def setting(db, key):
     row = db.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
-    return row["value"] if row else ""
+    return row[0] if row else ""
 
 
 def today(db):

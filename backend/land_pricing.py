@@ -8,6 +8,23 @@ from .db import setting
 from .finance import cents, require
 
 
+def entity_rates(db, entity):
+    record = db.execute("SELECT * FROM entity_prices WHERE entity_id=?", (entity,)).fetchone()
+    return (
+        dict(record)
+        if record
+        else {
+            "entity_id": entity,
+            "price_m2": None,
+            "price_v2": None,
+            "currency": db.execute(
+                "SELECT currency FROM entities WHERE id=?", (entity,)
+            ).fetchone()[0],
+            "updated_at": "",
+        }
+    )
+
+
 def factor(db):
     return Decimal(setting(db, "vara_m2") or "0.697224")
 
@@ -28,6 +45,7 @@ def areas(db, data):
 
 
 def quote(db, lot):
+    rates = entity_rates(db, lot["entity_id"])
     unit = lot["pricing_unit"]
     area = Decimal(lot["area_m2"])
     result = {
@@ -39,21 +57,23 @@ def quote(db, lot):
         "currency": lot["currency"],
         "price": lot["price"],
         "unit_price": None,
+        "entity_id": lot["entity_id"],
     }
     if unit != "fixed":
-        price = setting(db, "price_" + unit)
+        price = rates["price_" + unit]
         require(
             price and Decimal(price) > 0,
-            "El superusuario debe registrar el precio por " + ("m²" if unit == "m2" else "vara²"),
+            "El superusuario debe registrar la tarifa de esta lotificadora por "
+            + ("m²" if unit == "m2" else "vara²"),
             409,
         )
         require(area > 0, "El lote no tiene área registrada", 409)
         quantity = area if unit == "m2" else area / factor(db)
         result.update(
-            currency=setting(db, "land_currency") or "HNL",
+            currency=rates["currency"],
             price=cents(quantity * Decimal(price)),
             unit_price=price,
-            rate_updated=setting(db, "land_rate_updated"),
+            rate_updated=rates["updated_at"],
         )
         require(0 < result["price"] <= 99999999999999, "Precio del lote fuera de rango")
     result["quote_token"] = hashlib.sha256(json.dumps(result, sort_keys=True).encode()).hexdigest()

@@ -60,15 +60,23 @@ def fingerprint(db, entity, kind):
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
-def export_catalog(db, entity, kind, q="", state=""):
+def export_catalog(db, entity, kind, q="", state="", view="active"):
     kind_valid(kind)
     search = (
         "(name LIKE ? OR document LIKE ?)"
         if kind == "clients"
         else "(code LIKE ? OR description LIKE ?)"
     )
+    require(view in ("active", "deleted", "all"), "Vista inválida")
+    archived = (
+        ""
+        if view == "all"
+        else " AND deleted_at IS " + ("NOT " if view == "deleted" else "") + "NULL"
+    )
     rows = db.execute(
-        f"SELECT * FROM {kind} WHERE entity_id=? AND {search} AND (?='' OR status=?) ORDER BY id",
+        f"SELECT * FROM {kind} WHERE entity_id=? AND {search} AND (?='' OR status=?)"
+        + archived
+        + " ORDER BY id",
         (entity, f"%{q}%", f"%{q}%", state, state),
     ).fetchall()
     book = Workbook()
@@ -210,6 +218,11 @@ def plan_import(db, entity, kind, records, mode):
             require(
                 mode == "upsert" or previous is None,
                 "Registro existente; seleccione Crear y actualizar",
+            )
+            require(
+                previous is None or not previous["deleted_at"],
+                "El registro está eliminado. Restáurelo antes de importar cambios",
+                409,
             )
             record_key = ("id", previous["id"]) if previous else natural
             require(
