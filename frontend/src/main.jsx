@@ -30,13 +30,14 @@ import { Empty, Form, Input, Modal } from "./components";
 import { Catalog, Users as UserScreen } from "./catalogs";
 import { Contracts, Reservations } from "./contracts";
 import { Payments } from "./payments";
-import { Approvals, Arrears, Dashboard, Transactions } from "./reports";
+import { Approvals, Arrears, Dashboard, Transactions, Reporting } from "./reports";
 import { Settings } from "./settings";
 import { DatabasePanel } from "./data-tools";
 import { Plans } from "./plans";
 import "./style.css";
 
 const pages = {
+  reporting: ["Reportería", "Exportaciones por lotificadora, cartera y cobros.", FileText],
   plans: [
     "Planos y coordenadas",
     "Reunión de lotes, medidas, colindancias y mapa de Honduras.",
@@ -356,7 +357,7 @@ function App() {
           {admin && (
             <>
               <span className="nav-section">ADMINISTRACIÓN</span>
-              {["entities", "users", "settings", "database"].map((key) => {
+              {["reporting", "entities", "users", "settings", "database"].map((key) => {
                 const Icon = pages[key][2];
                 return (
                   <button
@@ -586,6 +587,7 @@ function App() {
                 <Arrears {...common} onCollect={collect} />
               )}
               {screen === "transactions" && <Transactions {...common} />}
+              {screen === "reporting" && admin && <Reporting entity={entity} entities={entities} />}
               {screen === "approvals" && <Approvals {...common} />}
               {screen === "settings" && (
                 <Settings {...common} onRestored={logoutLocal} />
@@ -595,7 +597,7 @@ function App() {
         </main>
         <footer>
           Grupo Abogados D Honduras{" "}
-          <span>Gestión de lotificadoras · v0.2.1</span>
+          <span>Gestión de lotificadoras · v0.2.2</span>
         </footer>
       </div>
       {password && (

@@ -1,5 +1,20 @@
 # Registro de versiones
 
+## 0.2.2 — 14 de octubre de 2026
+
+- Estado de cuenta y plan de pagos PDF/Excel, cobros y calendario completo.
+- Reportería por lotificadora, contratos, pagos, lotes/estados, finanzas y vencidos;
+  importes decimales y monedas separadas, sin exportar credenciales.
+- Neto de hoy en Resumen, conservando el neto y gráfica mensuales.
+- Estados pendiente de cancelar, cancelado (pagado), pendiente de escriturar y
+  escriturado; saldo automático, trámite exclusivo del superusuario y auditoría.
+- Depuración definitiva de lotes/clientes eliminados sin referencias, con respaldo
+  y auditoría. Libera códigos y evita reutilizar identificadores.
+- Precio fijo exclusivo del superusuario en interfaz, catálogo y nueva venta.
+- Explicación del módulo Autorizaciones. Migración compatible al esquema 5.
+- 93 pruebas aprobadas, Ruff, ESLint y compilación. Descargas verificadas en
+  navegador y PDF revisado con plan de 120 cuotas.
+
 ## 0.2.1 — 14 de octubre de 2026
 
 - Tarifas por m², vara² y moneda independientes por lotificadora, editables solo

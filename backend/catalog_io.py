@@ -12,7 +12,7 @@ from openpyxl.styles import Font, PatternFill
 from pydantic import ValidationError
 
 from . import models
-from .db import audit, now
+from .db import audit, catalog_id, now
 from .finance import cents, require
 from .land_pricing import areas, describe
 
@@ -285,6 +285,7 @@ def apply_import(db, user, entity, kind, changes, reason):
             )
         else:
             before = None
+            data["id"] = catalog_id(db, kind)
             data["entity_id"] = entity
             if kind == "clients":
                 data.update(created_by=user["id"], created_at=now())

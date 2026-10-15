@@ -17,6 +17,114 @@ import {
   useList,
 } from "./components";
 
+export function Reporting({ entity, entities }) {
+  const [selected, setSelected] = useState(entity || ""),
+    [kind, setKind] = useState("all"),
+    [since, setSince] = useState(""),
+    [until, setUntil] = useState(""),
+    [state, setState] = useState("");
+  const states = {
+    lots: ["available", "reserved", "sold", "deleted"],
+    contracts: [
+      "pending_payment",
+      "paid",
+      "pending_deed",
+      "deeded",
+      "annulled",
+    ],
+    payments: ["valid", "void"],
+  };
+  const query = new URLSearchParams({
+    kind,
+    ...(selected ? { entity: selected } : {}),
+    ...(since ? { since } : {}),
+    ...(until ? { until } : {}),
+    ...(state ? { state } : {}),
+  });
+  return (
+    <section className="panel">
+      <h3>Exportar reportes a Excel</h3>
+      <div className="form-grid">
+        <Select
+          title="Lotificadora"
+          value={selected}
+          onChange={(e) => setSelected(e.target.value)}
+          options={[
+            { value: "", label: "Todas las lotificadoras" },
+            ...entities.map((e) => ({ value: e.id, label: e.name })),
+          ]}
+        />
+        <Select
+          title="Tipo de reporte"
+          value={kind}
+          onChange={(e) => {
+            setKind(e.target.value);
+            setState("");
+          }}
+          options={[
+            { value: "all", label: "Todos los datos operativos" },
+            { value: "contracts", label: "Contratos y saldos" },
+            { value: "payments", label: "Pagos y recibos" },
+            { value: "lots", label: "Lotes y estados" },
+            { value: "finances", label: "Finanzas por lotificadora y moneda" },
+            { value: "overdue", label: "Cobros vencidos" },
+          ]}
+        />
+        <Input
+          title="Desde (opcional)"
+          type="date"
+          disabled={kind === "lots"}
+          value={since}
+          onChange={(e) => setSince(e.target.value)}
+        />
+        <Input
+          title="Hasta (opcional)"
+          type="date"
+          disabled={kind === "lots"}
+          value={until}
+          onChange={(e) => setUntil(e.target.value)}
+        />
+        {states[kind] && (
+          <Select
+            title="Estado"
+            value={state}
+            onChange={(e) => setState(e.target.value)}
+            options={[
+              { value: "", label: "Todos los estados" },
+              ...states[kind].map((s) => ({
+                value: s,
+                label: s === "deleted" ? "Eliminados" : label(s),
+              })),
+            ]}
+          />
+        )}
+      </div>
+      <p className="info-box">
+        Fechas: creación del contrato, fecha del pago y vencimiento en cobros
+        vencidos. Los lotes no se filtran por fecha. Los saldos y estados son
+        actuales. HNL y USD se presentan por separado. Finanzas muestra cobros
+        netos y cartera; no calcula utilidad ni gastos.
+      </p>
+      {since && until && since > until ? (
+        <p className="error">La fecha inicial debe ser anterior a la final.</p>
+      ) : (
+        <a
+          className="primary"
+          href={`/api/reports/export.xlsx?${query}`}
+          download
+        >
+          <Download size={16} /> Descargar Excel
+        </a>
+      )}
+      <p className="muted">
+        El reporte completo incluye lotificadoras, clientes, lotes, contratos,
+        cuotas, reservas, cobros, finanzas y vencidos. Para respaldar la base
+        completa utiliza Base de datos → Exportar base.
+      </p>
+    </section>
+  );
+}
+
 export function Dashboard({ entity, today, version }) {
   const [month, setMonth] = useState(today.slice(0, 7));
   const data = useList(
@@ -51,16 +159,24 @@ export function Dashboard({ entity, today, version }) {
         {currencies.map((currency) => (
           <div className="metric" key={currency}>
             <span>
-              <Wallet size={17} /> Recaudación neta · {currency}
+              <Wallet size={17} /> Neto de hoy · {currency}
             </span>
             <strong>
+              {money(
+                data.collection_today?.find((r) => r.currency === currency)
+                  ?.amount || 0,
+                currency,
+              )}
+            </strong>
+            <small>{today} · Cobros del día, excluyendo anulados</small>
+            <small>
+              Neto del mes seleccionado:{" "}
               {money(
                 data.collection?.find((r) => r.currency === currency)?.amount ||
                   0,
                 currency,
               )}
-            </strong>
-            <small>Pagos del mes, excluyendo anulados</small>
+            </small>
           </div>
         ))}
         <div className="metric">
@@ -400,6 +516,12 @@ export function Approvals({ entity, admin, version, refresh, notify }) {
             : "Consulta las solicitudes que has enviado."}
         </p>
       </div>
+      <p className="info-box">
+        Autorizaciones permite solicitar anular un cobro, liberar una reserva,
+        ceder un contrato o modificar sus condiciones. El superusuario revisa el
+        motivo y aprueba o rechaza; al aprobar se ejecuta la operación y se
+        registra quién solicitó y quién resolvió.
+      </p>
       {data.error && <p className="error">{data.error}</p>}
       <div className="panel">
         <Table

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ArrowRightLeft, Banknote, FileText, Plus } from "lucide-react";
 import { api, money } from "./api";
 import { Details } from "./details";
-import { RecordActions, RecordFilter } from "./record-tools";
+import { ContractClosing, RecordActions, RecordFilter } from "./record-tools";
 import {
   Badge,
   Field,
@@ -76,6 +76,11 @@ export function Contracts({
             { key: "client", title: "Cliente" },
             { key: "lot", title: "Lote" },
             {
+              key: "commercial_status",
+              title: "Estado",
+              render: (r) => <Badge value={r.commercial_status} />,
+            },
+            {
               key: "price",
               title: "Precio acordado",
               render: (r) => money(r.price, r.currency),
@@ -121,6 +126,7 @@ export function Contracts({
       {create && (
         <SaleForm
           entity={entity}
+          admin={admin}
           today={today}
           onClose={() => setCreate(false)}
           onSaved={() => {
@@ -146,7 +152,7 @@ export function Contracts({
   );
 }
 
-function SaleForm({ entity, today, onClose, onSaved }) {
+function SaleForm({ entity, admin, today, onClose, onSaved }) {
   const [quotation, setQuotation] = useState(null),
     [quoteError, setQuoteError] = useState("");
   const [data, setData] = useState({
@@ -232,7 +238,7 @@ function SaleForm({ entity, today, onClose, onSaved }) {
             step="0.01"
             required
             value={data.price}
-            readOnly={quotation?.unit !== "fixed"}
+            readOnly={!admin || quotation?.unit !== "fixed"}
             onChange={(e) => update("price", e.target.value)}
           />
           <Input
@@ -323,12 +329,26 @@ export function Account({
     [error, setError] = useState(""),
     [action, setAction] = useState(""),
     [version, setVersion] = useState(0),
-    [versions, setVersions] = useState(null);
+    [versions, setVersions] = useState(null),
+    [closing, setClosing] = useState(false);
   useEffect(() => {
     api(`/contracts/${identifier}`)
       .then(setAccount)
       .catch((err) => setError(err.message));
   }, [identifier, version]);
+  if (closing && account)
+    return (
+      <ContractClosing
+        account={account}
+        onClose={() => setClosing(false)}
+        onSaved={() => {
+          setClosing(false);
+          setVersion((v) => v + 1);
+          refresh();
+          notify("Estado del contrato actualizado");
+        }}
+      />
+    );
   if (action && account)
     return (
       <Modal
@@ -398,6 +418,7 @@ export function Account({
             <div>
               <small>Cliente actual</small>
               <h3>{account.client.name}</h3>
+              <Badge value={account.commercial_status} />
               <p>
                 Lote {account.lot.code} · {account.client.document}
               </p>
@@ -429,6 +450,16 @@ export function Account({
                 })()}
             </span>
             <div className="row-actions">
+              {admin && account.status === "active" && (
+                <button
+                  className="secondary"
+                  disabled={account.balance > 0}
+                  title="Requiere saldo cero; pendiente de cancelar se calcula automáticamente"
+                  onClick={() => setClosing(true)}
+                >
+                  Estado de escritura
+                </button>
+              )}
               {account.balance > 0 && (
                 <button
                   className="primary"
@@ -468,7 +499,25 @@ export function Account({
               )}
             </div>
           </div>
-          <h3>Prima y cuotas</h3>
+          <div className="toolbar">
+            <h3>Prima y cuotas · Plan de pagos</h3>
+            <div className="row-actions">
+              <a
+                className="secondary"
+                href={`/api/contracts/${identifier}/statement.pdf`}
+                download
+              >
+                Exportar PDF
+              </a>
+              <a
+                className="secondary"
+                href={`/api/contracts/${identifier}/statement.xlsx`}
+                download
+              >
+                Exportar Excel
+              </a>
+            </div>
+          </div>
           <Table
             rows={account.obligations}
             columns={[

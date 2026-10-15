@@ -22,7 +22,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from . import admin_data, artifacts, catalog_io, land_pricing, permissions
 from . import db as database
 from . import models as m
-from .db import audit, now, setting, today, transaction
+from .db import audit, catalog_id, now, setting, today, transaction
 from .finance import (
     admin,
     amend_contract,
@@ -56,7 +56,7 @@ async def lifespan(app):
 
 app = FastAPI(
     title="Grupo Abogados D Honduras",
-    version="0.2.1",
+    version="0.2.2",
     docs_url=None,
     redoc_url=None,
     openapi_url=None,
@@ -581,7 +581,7 @@ def clients(
 def create_client(entity: int, data: m.Client, user: User, db: DB):
     authorize(db, user, entity, True)
     identifier = db.execute(
-        "INSERT INTO clients(entity_id,name,document_type,document,phone,email,notes,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO clients(entity_id,name,document_type,document,phone,email,notes,created_by,created_at,id) VALUES(?,?,?,?,?,?,?,?,?,?)",
         (
             entity,
             data.name,
@@ -592,6 +592,7 @@ def create_client(entity: int, data: m.Client, user: User, db: DB):
             data.notes,
             user["id"],
             now(),
+            catalog_id(db, "clients"),
         ),
     ).lastrowid
     result = row(db, "clients", identifier)
@@ -690,12 +691,32 @@ def lots(
     }
 
 
+def catalog_code_available(db, entity, code, identifier=0):
+    found = db.execute(
+        "SELECT id,deleted_at FROM lots WHERE entity_id=? AND code=? AND id<>?",
+        (entity, code, identifier),
+    ).fetchone()
+    require(
+        not found,
+        "Código reservado por un lote eliminado. Muestre Eliminados / anulados para restaurarlo o eliminarlo definitivamente si no tiene referencias"
+        if found and found["deleted_at"]
+        else "Ya existe un lote con ese código en esta lotificadora",
+        409,
+    )
+
+
 @app.post("/api/entities/{entity}/lots")
 def create_lot(entity: int, data: m.Lot, user: User, db: DB):
     permissions.check(user, "lots", True)
     authorize(db, user, entity, True)
+    require(
+        user["role"] == "superuser" or data.pricing_unit != "fixed",
+        "Solo el superusuario puede establecer un precio fijo",
+        403,
+    )
+    catalog_code_available(db, entity, data.code)
     identifier = db.execute(
-        "INSERT INTO lots(entity_id,code,description,price,currency,area_m2,pricing_unit) VALUES(?,?,?,?,?,?,?)",
+        "INSERT INTO lots(entity_id,code,description,price,currency,area_m2,pricing_unit,id) VALUES(?,?,?,?,?,?,?,?)",
         (
             entity,
             data.code,
@@ -704,6 +725,7 @@ def create_lot(entity: int, data: m.Lot, user: User, db: DB):
             data.currency,
             land_pricing.areas(db, data),
             data.pricing_unit,
+            catalog_id(db, "lots"),
         ),
     ).lastrowid
     result = row(db, "lots", identifier)
@@ -717,6 +739,15 @@ def edit_lot(identifier: int, data: m.Lot, user: User, db: DB):
     previous = row(db, "lots", identifier)
     require(not previous["deleted_at"], "Restaure el lote antes de editarlo", 409)
     authorize(db, user, previous["entity_id"], True)
+    if user["role"] != "superuser":
+        require(
+            data.pricing_unit == previous["pricing_unit"]
+            and cents(data.price) == previous["price"]
+            and data.currency == previous["currency"],
+            "Solo el superusuario puede cambiar el precio, moneda o modalidad del lote",
+            403,
+        )
+    catalog_code_available(db, previous["entity_id"], data.code, identifier)
     db.execute(
         "UPDATE lots SET code=?,description=?,price=?,currency=?,area_m2=?,pricing_unit=? WHERE id=?",
         (
@@ -832,7 +863,7 @@ def contracts(
         "items": [
             dict(r)
             for r in db.execute(
-                "SELECT c.*,cl.name client,l.code lot,(SELECT SUM(amount-paid) FROM obligations WHERE contract_id=c.id) balance "
+                "SELECT c.*,cl.name client,l.code lot,(SELECT SUM(amount-paid) FROM obligations WHERE contract_id=c.id) balance,CASE WHEN c.status<>'active' THEN 'annulled' WHEN (SELECT COALESCE(SUM(amount-paid),0) FROM obligations WHERE contract_id=c.id)>0 THEN 'pending_payment' ELSE c.closing_status END commercial_status "
                 + base
                 + " ORDER BY c.id DESC LIMIT ? OFFSET ?",
                 (*filters, limit, offset),
@@ -850,6 +881,35 @@ def sale(entity: int, data: m.Sale, user: User, db: DB):
 @app.get("/api/contracts/{identifier}")
 def account(identifier: int, user: User, db: DB):
     return statement(db, user, identifier)
+
+
+@app.get("/api/contracts/{identifier}/statement.{format}")
+def account_export(identifier: int, format: str, user: User, db: DB):
+    from .account_exports import export_account
+
+    require(format in ("pdf", "xlsx"), "Formato no válido", 404)
+    account = statement(db, user, identifier)
+    entity = row(db, "entities", account["entity_id"])
+    content = export_account(account, entity, today(db).isoformat(), format)
+    audit(
+        db,
+        user,
+        "export_account",
+        entity["id"],
+        "contract",
+        identifier,
+        after={"format": format, "version": account["version"]},
+    )
+    return Response(
+        content,
+        media_type="application/pdf"
+        if format == "pdf"
+        else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="Estado_Cuenta_Contrato_{identifier}.{format}"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @app.get("/api/contracts/{identifier}/versions")
@@ -1081,6 +1141,15 @@ def dashboard(user: User, db: DB, entity: int | None = None, month: str = ""):
     return {
         "lots": lots,
         "collection": totals,
+        "collection_today": [
+            dict(r)
+            for r in db.execute(
+                "SELECT received_currency currency,SUM(received) amount FROM payments WHERE status='valid' AND payment_date=?"
+                + where
+                + " GROUP BY received_currency",
+                [str(today(db)), *args],
+            )
+        ],
         "chart": chart,
         "top_debtors": top,
         "today": str(today(db)),
@@ -1326,6 +1395,40 @@ def export(user: User, db: DB, entity: int | None = None, month: str = ""):
         artifacts.export_excel(db, tables),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": 'attachment; filename="reporte.xlsx"'},
+    )
+
+
+@app.get("/api/reports/export.xlsx")
+def reports_export(
+    user: User,
+    db: DB,
+    entity: int | None = None,
+    kind: str = "all",
+    since: date | None = None,
+    until: date | None = None,
+    state: str = "",
+):
+    from .reporting import build_reports
+
+    admin(user)
+    if entity:
+        authorize(db, user, entity)
+    tables = build_reports(db, entity, kind, since, until, state)
+    audit(
+        db,
+        user,
+        "export_business_report",
+        entity,
+        "export",
+        after={"kind": kind, "since": since, "until": until, "state": state},
+    )
+    return Response(
+        artifacts.export_excel(db, tables),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="Reporte_{kind}_{today(db)}.xlsx"',
+            "Cache-Control": "no-store",
+        },
     )
 
 

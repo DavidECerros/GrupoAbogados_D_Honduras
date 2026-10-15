@@ -20,6 +20,7 @@ export function RecordFilter({ value, onChange }) {
 
 export function RecordActions({ kind, record, admin, refresh, notify }) {
   const [open, setOpen] = useState(false),
+    [purge, setPurge] = useState(false),
     [reason, setReason] = useState("");
   if (!admin) return null;
   const removed =
@@ -30,17 +31,19 @@ export function RecordActions({ kind, record, admin, refresh, notify }) {
         : kind === "users"
           ? !record.active
           : Boolean(record.deleted_at);
-  const label = removed
-    ? "Restaurar"
-    : kind === "contracts" || kind === "payments"
-      ? "Anular"
-      : kind === "entities"
-        ? "Archivar"
-        : kind === "approvals"
-          ? "Retirar solicitud"
-          : kind === "users"
-            ? "Desactivar"
-            : "Eliminar";
+  const label = purge
+    ? "Eliminar definitivamente"
+    : removed
+      ? "Restaurar"
+      : kind === "contracts" || kind === "payments"
+        ? "Anular"
+        : kind === "entities"
+          ? "Archivar"
+          : kind === "approvals"
+            ? "Retirar solicitud"
+            : kind === "users"
+              ? "Desactivar"
+              : "Eliminar";
   return (
     <>
       <button
@@ -49,27 +52,51 @@ export function RecordActions({ kind, record, admin, refresh, notify }) {
         aria-label={label + " registro #" + record.id}
         title={label}
         onClick={() => {
+          setPurge(false);
           setReason("");
           setOpen(true);
         }}
       >
         {removed ? <RotateCcw size={16} /> : <Trash2 size={16} />}
       </button>
+      {removed && ["lots", "clients"].includes(kind) && (
+        <button
+          type="button"
+          className="text-button danger-text"
+          onClick={() => {
+            setPurge(true);
+            setReason("");
+            setOpen(true);
+          }}
+        >
+          Eliminar definitivamente
+        </button>
+      )}
       {open && (
         <Modal
           title={label + " registro #" + record.id}
-          onClose={() => setOpen(false)}
+          onClose={() => {
+            setOpen(false);
+            setPurge(false);
+          }}
         >
           <Form
-            onCancel={() => setOpen(false)}
+            onCancel={() => {
+              setOpen(false);
+              setPurge(false);
+            }}
             submit={label}
             confirm
             onSubmit={async () => {
               const result = await api(`/${kind}/${record.id}/lifecycle`, {
                 method: "POST",
-                body: { action: removed ? "restore" : "delete", reason },
+                body: {
+                  action: purge ? "purge" : removed ? "restore" : "delete",
+                  reason,
+                },
               });
               setOpen(false);
+              setPurge(false);
               refresh();
               notify(
                 label + ": operación registrada con respaldo " + result.backup,
@@ -85,15 +112,17 @@ export function RecordActions({ kind, record, admin, refresh, notify }) {
                 "Registro #" + record.id}
             </p>
             <p className="info-box">
-              {removed
-                ? "El registro volverá a la lista de vigentes. Se conserva su historial."
-                : kind === "contracts"
-                  ? "Se conservará el contrato y su historial. Para anularlo no debe tener cobros vigentes. El lote quedará disponible. La reactivación requiere que siga disponible."
-                  : kind === "payments"
-                    ? "Se conservará el cobro anulado y se restituirá su aplicación al saldo; no implica devolver dinero automáticamente."
-                    : kind === "users"
-                      ? "Se desactivará el acceso y se cerrarán las sesiones. El historial se conserva."
-                      : "El registro se quitará de la lista de vigentes y podrás restaurarlo desde Eliminados / anulados. Se conservarán sus relaciones e historial."}
+              {purge
+                ? "Se borrará de la base de datos y se liberará su código o documento. Solo se permite si no tiene contratos, reservas ni otras referencias. Se crea un respaldo previo y se conserva la auditoría. No se puede restaurar desde esta lista."
+                : removed
+                  ? "El registro volverá a la lista de vigentes. Se conserva su historial."
+                  : kind === "contracts"
+                    ? "Se conservará el contrato y su historial. Para anularlo no debe tener cobros vigentes. El lote quedará disponible. La reactivación requiere que siga disponible."
+                    : kind === "payments"
+                      ? "Se conservará el cobro anulado y se restituirá su aplicación al saldo; no implica devolver dinero automáticamente."
+                      : kind === "users"
+                        ? "Se desactivará el acceso y se cerrarán las sesiones. El historial se conserva."
+                        : "El registro se quitará de la lista de vigentes y podrás restaurarlo desde Eliminados / anulados. Se conservarán sus relaciones e historial."}
             </p>
             <Input
               title="Motivo"
@@ -171,6 +200,50 @@ export function EntityRates({ entity, onClose, notify }) {
           />
         </Form>
       )}
+    </Modal>
+  );
+}
+
+export function ContractClosing({ account, onClose, onSaved }) {
+  const [status, setStatus] = useState(account.closing_status),
+    [reason, setReason] = useState("");
+  return (
+    <Modal title="Estado de cancelación y escritura" onClose={onClose}>
+      <Form
+        onCancel={onClose}
+        confirm
+        onSubmit={async () => {
+          await api(`/contracts/${account.id}/closing-status`, {
+            method: "PUT",
+            body: { status, reason },
+          });
+          onSaved();
+        }}
+      >
+        <p className="info-box">
+          Pendiente de cancelar se determina por el saldo. Para marcar cancelado
+          o escrituración el saldo debe ser cero. Anular un contrato es una
+          operación distinta.
+        </p>
+        <Select
+          title="Estado"
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+          options={[
+            { value: "paid", label: "Cancelado (pagado)" },
+            { value: "pending_deed", label: "Pendiente de escriturar" },
+            { value: "deeded", label: "Escriturado" },
+          ]}
+        />
+        <Input
+          title="Motivo"
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          required
+          minLength={3}
+          maxLength={2000}
+        />
+      </Form>
     </Modal>
   );
 }

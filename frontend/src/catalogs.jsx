@@ -456,7 +456,7 @@ function CatalogForm({
             price: initial.price ? (initial.price / 100).toFixed(2) : "",
             currency: initial.currency || "HNL",
             area_m2: initial.area_m2 || "0",
-            pricing_unit: initial.pricing_unit || "fixed",
+            pricing_unit: initial.pricing_unit || (admin ? "fixed" : "m2"),
           }
         : {
             name: initial.name || "",
@@ -560,6 +560,7 @@ function CatalogForm({
             <>
               <Select
                 title="Cómo se determina el precio del lote"
+                disabled={!admin}
                 options={[
                   {
                     value: "fixed",
@@ -591,6 +592,7 @@ function CatalogForm({
               {data.pricing_unit === "fixed" ? (
                 <Input
                   title="Precio total fijo del lote"
+                  readOnly={!admin}
                   type="number"
                   step="0.01"
                   min="0.01"
@@ -650,6 +652,7 @@ function CatalogForm({
 
               <Select
                 title="Moneda"
+                disabled={!admin}
                 options={["HNL", "USD"]}
                 value={data.currency}
                 onChange={(e) => update("currency", e.target.value)}

@@ -184,7 +184,13 @@ def test_administrator_is_scoped_and_cannot_set_rates(portfolio):
     c, e, *_ = portfolio
     other = create(c, "/api/entities", {"name": "Otra entidad"})
     operator(c, e, profile="administrator")
-    create(c, f"/api/entities/{e['id']}/lots", {"code": "ADMIN", "price": "1"})
+    assert (
+        c.post(f"/api/entities/{e['id']}/lots", json={"code": "ADMIN", "price": "1"}).status_code
+        == 403
+    )
+    create(
+        c, f"/api/entities/{e['id']}/lots", {"code": "ADMIN", "pricing_unit": "m2", "area_m2": "10"}
+    )
     assert c.get(f"/api/entities/{other['id']}/lots").status_code == 403
     assert c.get(f"/api/dashboard?entity={e['id']}").status_code == 200
     assert c.get("/api/dashboard").status_code == 403

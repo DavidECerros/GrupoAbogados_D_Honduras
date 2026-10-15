@@ -21,6 +21,34 @@ TABLES = {
 
 
 def register(app, User, DB):
+    @app.put("/api/contracts/{identifier}/closing-status")
+    def closing_status(identifier: int, data: m.ContractClosing, user: User, db: DB):
+        from .finance import balance
+
+        admin(user)
+        previous = row(db, "contracts", identifier)
+        authorize(db, user, previous["entity_id"], True)
+        require(previous["status"] == "active", "El contrato está anulado", 409)
+        require(
+            balance(db, identifier) == 0,
+            "El contrato sigue pendiente de cancelar: registre los cobros antes de cambiar su estado de escrituración",
+            409,
+        )
+        db.execute("UPDATE contracts SET closing_status=? WHERE id=?", (data.status, identifier))
+        result = row(db, "contracts", identifier)
+        audit(
+            db,
+            user,
+            "update_contract_closing",
+            previous["entity_id"],
+            "contract",
+            identifier,
+            reason=data.reason,
+            before=previous,
+            after=result,
+        )
+        return result
+
     @app.put("/api/approvals/{identifier}")
     def edit_approval(identifier: int, data: m.Reason, user: User, db: DB):
         admin(user)
@@ -50,6 +78,61 @@ def register(app, User, DB):
         entity = identifier if kind == "entities" else before.get("entity_id")
         if entity:
             authorize(db, user, entity)
+        if data.action == "purge":
+            require(
+                kind in ("lots", "clients"), "Solo se depuran lotes y clientes sin referencias", 422
+            )
+            require(
+                before["deleted_at"], "Elimine primero el registro de la lista de vigentes", 409
+            )
+            references = (
+                [("contracts", "lot_id"), ("reservations", "lot_id"), ("land_plans", "lot_id")]
+                if kind == "lots"
+                else [
+                    ("contracts", "client_id"),
+                    ("reservations", "client_id"),
+                    ("payments", "client_id"),
+                    ("transfers", "previous_client"),
+                    ("transfers", "new_client"),
+                ]
+            )
+            linked = [
+                table
+                for table, field in references
+                if db.execute(
+                    f"SELECT 1 FROM {table} WHERE {field}=? LIMIT 1", (identifier,)
+                ).fetchone()
+            ]
+            if (
+                kind == "clients"
+                and db.execute(
+                    "SELECT 1 FROM land_plans WHERE json_extract(payload,'$.client_id')=? LIMIT 1",
+                    (identifier,),
+                ).fetchone()
+            ):
+                linked.append("land_plans")
+            require(
+                not linked,
+                "No se puede borrar definitivamente: tiene referencias en "
+                + ", ".join(linked)
+                + ". Restaure el registro y corrija sus datos; se conserva el historial",
+                409,
+            )
+            db.commit()
+            backup = artifacts.backup(user)
+            db.execute("BEGIN IMMEDIATE")
+            db.execute(f"DELETE FROM {TABLES[kind]} WHERE id=?", (identifier,))
+            audit(
+                db,
+                user,
+                "purge_" + kind,
+                entity,
+                kind,
+                identifier,
+                reason=data.reason,
+                before=before,
+            )
+            return {"ok": True, "backup": backup.name}
         if kind == "users":
             require(before["role"] != "superuser", "El superusuario está protegido", 409)
             before = {

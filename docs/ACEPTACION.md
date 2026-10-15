@@ -1,3 +1,13 @@
+# Evidencia de aceptación de la versión 0.2.2
+
+14 de octubre de 2026: 93 pruebas pasan; Ruff, ESLint y compilación de producción.
+Se validan depuración sin referencias y reutilización de código sin reutilizar ID,
+protección de precios por rol, exportaciones por entidad, conciliación del neto
+diario, anulación, cartera y estados de escritura. En navegador se descargaron
+el reporte completo y PDF del estado de cuenta. Revisión visual del PDF normal
+y última página de un plan de 120 cuotas, con encabezados repetidos y totales.
+Las muestras y datos de QA son ficticios y no se operó sobre la base de trabajo.
+
 # Evidencia de aceptación de la versión 0.2.1
 
 Verificación adicional: 14 de octubre de 2026. Pasan 86 pruebas automatizadas,

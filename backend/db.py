@@ -35,6 +35,18 @@ def now():
     return datetime.now(timezone.utc).isoformat()
 
 
+def catalog_id(db, kind):
+    """Never reuse a catalog ID after purging; audit references remain unambiguous."""
+    if kind not in ("clients", "lots"):
+        raise ValueError("Catálogo inválido")
+    singular = {"clients": "client", "lots": "lot"}[kind]
+    return db.execute(
+        f"SELECT MAX(value)+1 FROM (SELECT COALESCE(MAX(id),0) value FROM {kind} "
+        "UNION ALL SELECT COALESCE(MAX(record_id),0) FROM audit WHERE record_type IN (?,?))",
+        (kind, singular),
+    ).fetchone()[0]
+
+
 def connect():
     DATA.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(
@@ -58,7 +70,7 @@ def initialize():
 def migrate(db):
     """Upgrade existing v1 databases without replacing any customer records."""
     version = db.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
-    if version not in (1, 2, 3, 4):
+    if version not in (1, 2, 3, 4, 5):
         raise ValueError("Esquema incompatible")
     db.execute("BEGIN IMMEDIATE")
     try:
@@ -76,7 +88,10 @@ def migrate(db):
                 "profile": "TEXT NOT NULL DEFAULT 'standard' CHECK(profile IN ('standard','administrator'))",
                 "permissions": "TEXT",
             },
-            "contracts": {"pricing_snapshot": "TEXT"},
+            "contracts": {
+                "pricing_snapshot": "TEXT",
+                "closing_status": "TEXT NOT NULL DEFAULT 'paid' CHECK(closing_status IN ('paid','pending_deed','deeded'))",
+            },
         }
         for table, fields in additions.items():
             existing = {r[1] for r in db.execute(f"PRAGMA table_info({table})")}
@@ -112,7 +127,7 @@ def migrate(db):
         }.items():
             db.execute("INSERT OR IGNORE INTO settings VALUES(?,?)", (key, value))
         db.execute("DELETE FROM schema_version")
-        db.execute("INSERT INTO schema_version VALUES(4)")
+        db.execute("INSERT INTO schema_version VALUES(5)")
         db.commit()
     except BaseException:
         db.rollback()

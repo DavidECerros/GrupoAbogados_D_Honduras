@@ -98,6 +98,12 @@ def create_sale(db, user, entity, data):
             "El precio se calcula con el área y la tarifa del superusuario",
             409,
         )
+    elif user["role"] != "superuser":
+        require(
+            cents(data.price) == quotation["price"],
+            "Solo el superusuario puede cambiar el precio fijo. Actualice la cotización del lote",
+            403,
+        )
     require(
         client["status"] == "active", "Cliente inhabilitado; reactívelo antes de contratar", 409
     )
@@ -149,6 +155,12 @@ def balance(db, contract):
     ).fetchone()[0]
 
 
+def commercial_status(contract, outstanding):
+    if contract["status"] != "active":
+        return "annulled"
+    return "pending_payment" if outstanding > 0 else contract["closing_status"]
+
+
 def statement(db, user, identifier):
     contract = row(db, "contracts", identifier)
     authorize(db, user, contract["entity_id"])
@@ -171,6 +183,7 @@ def statement(db, user, identifier):
         "client": row(db, "clients", contract["client_id"]),
         "lot": row(db, "lots", contract["lot_id"]),
         "balance": balance(db, identifier),
+        "commercial_status": commercial_status(contract, balance(db, identifier)),
         "obligations": obligations,
         "payments": payments,
         "transfers": [

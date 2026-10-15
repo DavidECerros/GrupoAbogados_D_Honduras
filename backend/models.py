@@ -88,7 +88,12 @@ class LandRates(Model):
 
 class Lifecycle(Model):
     reason: str = Field(min_length=3, max_length=2000)
-    action: Literal["delete", "restore"] = "delete"
+    action: Literal["delete", "restore", "purge"] = "delete"
+
+
+class ContractClosing(Model):
+    status: Literal["paid", "pending_deed", "deeded"]
+    reason: str = Field(min_length=3, max_length=2000)
 
 
 class PaymentEdit(Model):

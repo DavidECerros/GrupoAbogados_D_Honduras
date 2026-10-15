@@ -1,4 +1,4 @@
-# Edición, eliminación y tarifas — v0.2.1
+# Edición, eliminación y tarifas — v0.2.2
 
 ## Tarifas independientes por lotificadora
 
@@ -60,13 +60,22 @@ registrando el correcto. Modificar sus datos descriptivos conserva importe,
 saldo y folio; el PDF se regenera con los datos corregidos. Anular un cobro no
 realiza una devolución bancaria ni elimina su evidencia.
 
+## Depuración, precio fijo y reportes
+
+En Eliminados / anulados, el superusuario puede Eliminar definitivamente lotes
+y clientes sin referencias para liberar códigos y documentos. Se genera respaldo
+y auditoría; los registros con historial deben restaurarse y corregirse.
+El precio fijo solo lo modifica el superusuario, también validado en la API.
+Consulte [reportería y estados](REPORTERIA_Y_ESTADOS.md) para exportaciones,
+plan de pagos y escrituración.
+
 ## Pruebas y actualización
 
-La versión incluye 86 pruebas, con edición repetida de lotes, clientes, reservas,
+La versión incluye 93 pruebas, con edición repetida de lotes, clientes, reservas,
 contratos, cobros y planos; tarifas distintas por entidad; restauración de
 respaldos y verificaciones de permisos y saldos.
 
-Cree respaldo, detenga la versión anterior y use el paquete Windows v0.2.1 en
+Cree respaldo, detenga la versión anterior y use el paquete Windows v0.2.2 en
 una carpeta nueva. Ejecute su Iniciar.cmd y recargue con Ctrl+F5. Se conservan
-los datos externos y se migra al esquema 4. No use el acceso directo anterior
+los datos externos y se migra al esquema 5. No use el acceso directo anterior
 hasta que apunte a la carpeta nueva.

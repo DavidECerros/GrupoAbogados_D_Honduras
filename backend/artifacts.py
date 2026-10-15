@@ -7,11 +7,12 @@ import sqlite3
 import tempfile
 import zipfile
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 from xml.sax.saxutils import escape
 
 from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill
+from openpyxl.styles import Alignment, Font, PatternFill
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet
@@ -130,10 +131,20 @@ def export_excel(db, tables):
             for cell in sheet[1]:
                 cell.font = Font(bold=True, color="FFFFFF")
                 cell.fill = PatternFill("solid", fgColor="18384A")
+                cell.alignment = Alignment(wrap_text=True, vertical="center")
+            sheet.row_dimensions[1].height = 34
+            sheet.sheet_view.showGridLines = False
             for column in sheet.columns:
                 sheet.column_dimensions[column[0].column_letter].width = min(
                     45, max(14, max(len(str(c.value or "")) for c in column[:100]) + 2)
                 )
+            for cells in sheet.iter_rows(min_row=2):
+                for cell in cells:
+                    if isinstance(cell.value, Decimal):
+                        cell.number_format = "#,##0.00"
+                    if sheet.title == "Información":
+                        cell.alignment = Alignment(wrap_text=True, vertical="top")
+                        sheet.row_dimensions[cell.row].height = 130
         else:
             sheet.append(["Sin registros"])
     buffer = io.BytesIO()
@@ -250,7 +261,7 @@ def restore(content, user):
                 )
                 require(
                     probe.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
-                    in (1, 2, 3, 4),
+                    in (1, 2, 3, 4, 5),
                     "Esquema incompatible",
                 )
                 superuser = probe.execute(
