@@ -1,3 +1,15 @@
+# Evidencia de aceptación de la versión 0.2.3
+
+15 de octubre de 2026: pasan 101 pruebas, Ruff, ESLint y compilación.
+En navegador: cobro de 2,500 aplicado 2,000 a octubre y 500 a noviembre,
+con 1,500 restante; exportación Mis pagos descargada; solicitud y aprobación
+de cambio de fecha al día 20 conservando cuotas de 2,000 y abonos existentes.
+Se comprobó la fecha después de editar otros campos del formulario. Revisión
+visual del recibo carta y de las dos páginas en media carta, con desglose mensual.
+Pruebas incluyen conversión monetaria, repetición idempotente, selección de
+cuota, exceso y saldos, vista previa/solicitud obsoletas, reversión de cobros,
+planes heredados duplicados y abonos parciales. Todos los datos de QA son ficticios.
+
 # Evidencia de aceptación de la versión 0.2.2
 
 14 de octubre de 2026: 93 pruebas pasan; Ruff, ESLint y compilación de producción.

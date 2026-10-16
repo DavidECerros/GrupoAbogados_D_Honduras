@@ -33,10 +33,24 @@ export function Field({ title, children, hint }) {
     </label>
   );
 }
-export function Input({ title, hint, ...props }) {
+export function Input({ title, hint, type, onChange, onBlur, ...props }) {
+  const calendar = type === "date" || type === "month";
   return (
     <Field title={title} hint={hint}>
-      <input {...props} />
+      <input
+        {...props}
+        type={type}
+        onChange={onChange}
+        onInput={calendar ? onChange : undefined}
+        onBlur={
+          calendar
+            ? (e) => {
+                onChange?.(e);
+                onBlur?.(e);
+              }
+            : onBlur
+        }
+      />
     </Field>
   );
 }

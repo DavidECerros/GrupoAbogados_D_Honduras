@@ -1,5 +1,18 @@
 # Registro de versiones
 
+## 0.2.3 — 15 de octubre de 2026
+
+- Selección de mes/cuota en cobros, abonos parciales y excedentes a cuotas siguientes.
+- Vista previa de aplicación calculada en servidor y detección de cambios concurrentes.
+- Meses e importes desglosados en recibos, estado de cuenta, Reportería y Mis pagos;
+  hoja Aplicaciones por mes y conservación de etiquetas históricas.
+- Modificación de condiciones en las cuotas existentes, sin cerrar pendientes
+  ni duplicar el calendario; conserva aplicaciones y pagos completos/parciales.
+- Reorganización de calendarios de versiones anteriores al aplicar una modificación.
+- Envío a Autorizaciones marcado por defecto y rechazo de solicitudes desactualizadas.
+- Sincronización de fechas al editar campos de calendario y meses de Resumen.
+- Esquema 6 compatible con respaldos anteriores. 101 pruebas, Ruff, ESLint y build.
+
 ## 0.2.2 — 14 de octubre de 2026
 
 - Estado de cuenta y plan de pagos PDF/Excel, cobros y calendario completo.

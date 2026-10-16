@@ -16,7 +16,15 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import (
+    CondPageBreak,
+    Image,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
 
 from . import db as database
 from .db import audit, now, setting, today
@@ -99,10 +107,55 @@ def generate_receipt(db, identifier):
         )
     )
     contents.append(table)
+    from .payment_allocation import allocation_map
+
+    applications = allocation_map(db, [receipt["payment_id"]]).get(receipt["payment_id"], [])
+    if applications:
+        contents += [
+            Spacer(1, 12),
+            CondPageBreak(100),
+            Paragraph("Meses y cuotas a los que se aplica este cobro", styles["Heading3"]),
+        ]
+        details = [["Mes / cuota", "Aplicado", "Saldo de la cuota tras el cobro"]]
+        for item in applications:
+            pending = item.get("remaining_after")
+            details.append(
+                [
+                    item["label"] + " (vence " + item["due_date"] + ")",
+                    money(item["amount"], snap["contract_currency"]),
+                    money(pending, snap["contract_currency"])
+                    if pending is not None
+                    else "No disponible para este recibo anterior",
+                ]
+            )
+        detail_table = Table(
+            [[Paragraph(escape(str(c)), styles["Normal"]) for c in r] for r in details],
+            colWidths=[page[0] - 320, 120, 140],
+            repeatRows=1,
+        )
+        detail_table.setStyle(
+            TableStyle(
+                [
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E1ECE8")),
+                    ("TOPPADDING", (0, 0), (-1, -1), 5),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ]
+            )
+        )
+        contents.append(detail_table)
     temporary = path.with_suffix(".tmp")
+
+    def footer(canvas, doc):
+        canvas.setFont("Helvetica", 8)
+        canvas.drawString(
+            30, 9, snap["folio"] + (" - ANULADO" if receipt["status"] == "void" else "")
+        )
+        canvas.drawRightString(page[0] - 30, 9, f"Página {doc.page}")
+
     SimpleDocTemplate(
         str(temporary), pagesize=page, leftMargin=30, rightMargin=30, topMargin=20, bottomMargin=20
-    ).build(contents)
+    ).build(contents, onFirstPage=footer, onLaterPages=footer)
     os.replace(temporary, path)
     db.execute(
         "UPDATE receipts SET path=?,status=? WHERE id=?",
@@ -142,6 +195,12 @@ def export_excel(db, tables):
                 for cell in cells:
                     if isinstance(cell.value, Decimal):
                         cell.number_format = "#,##0.00"
+                    if isinstance(cell.value, str) and len(cell.value) > 45:
+                        cell.alignment = Alignment(wrap_text=True, vertical="top")
+                        sheet.row_dimensions[cell.row].height = max(
+                            sheet.row_dimensions[cell.row].height or 15,
+                            min(120, (len(cell.value) // 42 + 1) * 15),
+                        )
                     if sheet.title == "Información":
                         cell.alignment = Alignment(wrap_text=True, vertical="top")
                         sheet.row_dimensions[cell.row].height = 130
@@ -261,7 +320,7 @@ def restore(content, user):
                 )
                 require(
                     probe.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
-                    in (1, 2, 3, 4, 5),
+                    in (1, 2, 3, 4, 5, 6),
                     "Esquema incompatible",
                 )
                 superuser = probe.execute(

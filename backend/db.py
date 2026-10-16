@@ -70,7 +70,7 @@ def initialize():
 def migrate(db):
     """Upgrade existing v1 databases without replacing any customer records."""
     version = db.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
-    if version not in (1, 2, 3, 4, 5):
+    if version not in (1, 2, 3, 4, 5, 6):
         raise ValueError("Esquema incompatible")
     db.execute("BEGIN IMMEDIATE")
     try:
@@ -80,6 +80,7 @@ def migrate(db):
                 "ALTER TABLE clients ADD COLUMN status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','inactive'))"
             )
         additions = {
+            "obligations": {"retired": "INTEGER NOT NULL DEFAULT 0 CHECK(retired IN (0,1))"},
             "lots": {
                 "area_m2": "TEXT NOT NULL DEFAULT '0'",
                 "pricing_unit": "TEXT NOT NULL DEFAULT 'fixed' CHECK(pricing_unit IN ('fixed','m2','v2'))",
@@ -127,7 +128,7 @@ def migrate(db):
         }.items():
             db.execute("INSERT OR IGNORE INTO settings VALUES(?,?)", (key, value))
         db.execute("DELETE FROM schema_version")
-        db.execute("INSERT INTO schema_version VALUES(5)")
+        db.execute("INSERT INTO schema_version VALUES(6)")
         db.commit()
     except BaseException:
         db.rollback()

@@ -141,6 +141,8 @@ class Payment(Model):
     method: Literal["cash", "deposit", "transfer"] = "cash"
     bank_reference: str = Field(max_length=150, default="")
     notes: str = Field(max_length=2000, default="")
+    start_obligation_id: int | None = Field(default=None, gt=0)
+    allocation_token: str | None = None
 
 
 class Reason(Model):
@@ -158,6 +160,7 @@ class Amendment(Reason):
     installments: int = Field(gt=0, le=600, strict=True)
     down_due: date
     first_due: date
+    expected_schedule: str | None = None
 
 
 class Approval(Reason):

@@ -367,11 +367,15 @@ export function Account({
           admin={admin}
           today={today}
           onCancel={() => setAction("")}
-          onSaved={() => {
+          onSaved={(requested) => {
             setAction("");
             setVersion((v) => v + 1);
             refresh();
-            notify(admin ? "Contrato actualizado" : "Solicitud enviada");
+            notify(
+              requested
+                ? "Solicitud enviada a Autorizaciones"
+                : "Contrato actualizado",
+            );
           }}
         />
       </Modal>
@@ -428,6 +432,15 @@ export function Account({
               <h2>{money(account.balance, account.currency)}</h2>
             </div>
           </div>
+          {account.obligations.filter((o) => o.number > 0).length >
+            account.installments && (
+            <p className="info-box">
+              Este plan conserva cuotas de una reprogramación anterior. En
+              Modificar condiciones indica el número total de cuotas, incluidas
+              las pagadas, y envía el cambio a Autorizaciones. Al aprobarlo se
+              reorganiza el plan conservando los abonos y recibos.
+            </p>
+          )}
           <div className="toolbar">
             <span>
               Precio: {money(account.price, account.currency)} · Prima:{" "}
@@ -548,11 +561,13 @@ export function Account({
                 render: (r) => (
                   <Badge
                     value={
-                      r.paid === r.amount
-                        ? "Pagada"
-                        : r.due_date < today
-                          ? "Vencida"
-                          : "Pendiente"
+                      r.amount === 0
+                        ? "Sin importe"
+                        : r.paid === r.amount
+                          ? "Pagada"
+                          : r.due_date < today
+                            ? "Vencida"
+                            : "Pendiente"
                     }
                     color={
                       r.paid === r.amount
@@ -572,6 +587,7 @@ export function Account({
             columns={[
               { key: "folio", title: "Folio" },
               { key: "payment_date", title: "Fecha" },
+              { key: "months_paid", title: "Meses / cuotas pagados" },
               {
                 key: "received",
                 title: "Recibido",
@@ -619,6 +635,7 @@ function ContractAction({
   onSaved,
 }) {
   const [reason, setReason] = useState(""),
+    [approval, setApproval] = useState(!admin || action === "amend"),
     [newClient, setNewClient] = useState(""),
     [data, setData] = useState({
       price: (account.price / 100).toFixed(2),
@@ -637,14 +654,18 @@ function ContractAction({
       </h3>
       <Form
         onCancel={onCancel}
-        submit={admin ? "Confirmar cambio" : "Solicitar autorización"}
+        submit={approval ? "Enviar a Autorizaciones" : "Confirmar cambio"}
         confirm
         onSubmit={async () => {
           const payload =
             action === "transfer"
               ? { new_client_id: newClient, effective_date: today }
-              : { ...data, installments: Number(data.installments) };
-          if (admin)
+              : {
+                  ...data,
+                  installments: Number(data.installments),
+                  expected_schedule: account.schedule_token,
+                };
+          if (admin && !approval)
             await api(
               `/contracts/${account.id}` +
                 (action === "transfer" ? "/transfer" : ""),
@@ -666,7 +687,7 @@ function ContractAction({
                 reason,
               },
             });
-          onSaved();
+          onSaved(approval);
         }}
       >
         <div className="form-grid">
@@ -707,7 +728,7 @@ function ContractAction({
                 onChange={(e) => update("down_payment", e.target.value)}
               />
               <Input
-                title="Cuotas pendientes nuevas"
+                title="Número total de cuotas del contrato (incluye pagadas)"
                 type="number"
                 required
                 min="1"
@@ -723,7 +744,7 @@ function ContractAction({
                 onChange={(e) => update("down_due", e.target.value)}
               />
               <Input
-                title="Primer vencimiento nuevo"
+                title="Vencimiento de la primera cuota del plan"
                 type="date"
                 required
                 value={data.first_due}
@@ -734,10 +755,21 @@ function ContractAction({
         </div>
         {action === "amend" && (
           <p className="info-box">
-            Se conserva lo ya pagado y se distribuye el saldo restante en las
-            nuevas cuotas. El precio y la prima deben cubrir los importes ya
-            pagados. Los recibos anteriores se conservan.
+            Se actualizan fechas y montos de las cuotas existentes, conservando
+            sus pagos. Solo se agregan cuotas si aumenta el número total. Las
+            cuotas completamente pagadas conservan su importe y los recibos
+            anteriores se mantienen.
           </p>
+        )}
+        {admin && action === "amend" && (
+          <label className="check-line">
+            <input
+              type="checkbox"
+              checked={approval}
+              onChange={(e) => setApproval(e.target.checked)}
+            />{" "}
+            Enviar este cambio a Autorizaciones antes de aplicarlo
+          </label>
         )}
         <Field title="Motivo">
           <textarea

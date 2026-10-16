@@ -102,6 +102,13 @@ export function Payments({
             },
             { key: "payment_date", title: "Fecha" },
             {
+              key: "months_paid",
+              title: "Meses / cuotas pagados",
+              render: (r) => (
+                <small title={r.months_paid}>{r.months_paid || "—"}</small>
+              ),
+            },
+            {
               key: "client",
               title: "Cliente / lote",
               render: (r) => (
@@ -246,6 +253,8 @@ function Collection({
     [account, setAccount] = useState(null),
     [error, setError] = useState(""),
     [rate, setRate] = useState(""),
+    [preview, setPreview] = useState(null),
+    [previewError, setPreviewError] = useState(""),
     [result, setResult] = useState(null);
   const { items } = useList(
     `/entities/${entity}/contracts?q=${encodeURIComponent(q)}&size=100`,
@@ -258,6 +267,7 @@ function Collection({
     method: "cash",
     bank_reference: "",
     notes: "",
+    start_obligation_id: "",
   });
   const update = (key, value) => setData((prev) => ({ ...prev, [key]: value }));
   useEffect(() => {
@@ -272,10 +282,51 @@ function Collection({
       api(`/contracts/${chosen}`)
         .then((account) => {
           setAccount(account);
-          setData((prev) => ({ ...prev, currency: account.currency }));
+          setData((prev) => ({
+            ...prev,
+            currency: account.currency,
+            start_obligation_id: "",
+          }));
         })
         .catch((err) => setError(err.message));
   }, [chosen]);
+  useEffect(() => {
+    setPreview(null);
+    setPreviewError("");
+    if (!account || !data.amount || result) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      api("/payments/preview", {
+        method: "POST",
+        signal: controller.signal,
+        body: {
+          operation_id: data.operation_id,
+          contract_id: Number(chosen),
+          amount: data.amount,
+          currency: data.currency,
+          start_obligation_id: data.start_obligation_id
+            ? Number(data.start_obligation_id)
+            : null,
+        },
+      })
+        .then(setPreview)
+        .catch((e) => {
+          if (!controller.signal.aborted) setPreviewError(e.message);
+        });
+    }, 250);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [
+    account,
+    chosen,
+    data.amount,
+    data.currency,
+    data.start_obligation_id,
+    data.operation_id,
+    result,
+  ]);
   const crossing = account && data.currency !== account.currency;
   const applied = !crossing
     ? Number(data.amount || 0)
@@ -297,6 +348,7 @@ function Collection({
           </div>
           <h2>{result.folio}</h2>
           <p>{money(result.received, result.received_currency)} recibidos</p>
+          <p>{result.months_paid}</p>
           <p>
             Saldo posterior:{" "}
             <strong>{money(result.balance_after, account.currency)}</strong>
@@ -326,9 +378,21 @@ function Collection({
           confirmationText="Revisé cliente, moneda, importe y fecha. Confirmo el cobro."
           onSubmit={async () => {
             if (!account) throw new Error("Selecciona un contrato");
+            if (!preview)
+              throw new Error(
+                previewError ||
+                  "Espera la vista previa de aplicación del cobro",
+              );
             const result = await api("/payments", {
               method: "POST",
-              body: { ...data, contract_id: Number(chosen) },
+              body: {
+                ...data,
+                contract_id: Number(chosen),
+                start_obligation_id: data.start_obligation_id
+                  ? Number(data.start_obligation_id)
+                  : null,
+                allocation_token: preview.allocation_token,
+              },
             });
             setResult(result);
             refresh();
@@ -410,6 +474,35 @@ function Collection({
                 </span>
               </div>
               <div className="form-grid">
+                <Select
+                  title="Mes / cuota que está pagando"
+                  value={data.start_obligation_id}
+                  onChange={(e) =>
+                    update("start_obligation_id", e.target.value)
+                  }
+                  options={[
+                    {
+                      value: "",
+                      label:
+                        "Automático: prima y cuotas pendientes más antiguas",
+                    },
+                    ...account.obligations
+                      .filter((o) => o.paid < o.amount)
+                      .map((o) => ({
+                        value: o.id,
+                        label:
+                          (o.number === 0 ? "Prima" : "Cuota " + o.number) +
+                          " · " +
+                          new Intl.DateTimeFormat("es-HN", {
+                            month: "long",
+                            year: "numeric",
+                            timeZone: "UTC",
+                          }).format(new Date(o.due_date + "T12:00:00Z")) +
+                          " · Pendiente " +
+                          money(o.amount - o.paid, account.currency),
+                      })),
+                  ]}
+                />
                 <Input
                   title="Importe recibido"
                   type="number"
@@ -472,10 +565,68 @@ function Collection({
                       )}
                 </strong>
                 <small className="block">
-                  Se cubre primero la prima y después las cuotas por
-                  vencimiento. El servidor valida y calcula el importe final.
+                  El cobro empieza en la cuota seleccionada y el excedente se
+                  aplica a las siguientes. Un importe menor queda como abono
+                  parcial. Automático empieza por la prima y la deuda más
+                  antigua.
                 </small>
               </div>
+              {previewError && <p className="error">{previewError}</p>}
+              {preview && (
+                <>
+                  {preview.prior_pending > 0 && (
+                    <p className="info-box">
+                      Las cuotas anteriores conservarán un pendiente de{" "}
+                      {money(preview.prior_pending, account.currency)}.
+                    </p>
+                  )}
+                  <h3>Aplicación del cobro por mes</h3>
+                  <Table
+                    rows={preview.allocations}
+                    columns={[
+                      { key: "label", title: "Mes / cuota" },
+                      {
+                        key: "amount",
+                        title: "Se aplica",
+                        render: (r) => money(r.amount, account.currency),
+                      },
+                      {
+                        key: "remaining_after",
+                        title: "Queda pendiente en esa cuota",
+                        render: (r) =>
+                          money(r.remaining_after, account.currency),
+                      },
+                    ]}
+                  />
+                </>
+              )}
+              <button
+                type="button"
+                className="secondary"
+                onClick={async () => {
+                  try {
+                    const updated = await api(`/contracts/${chosen}`);
+                    setAccount(updated);
+                    setData((prev) => ({
+                      ...prev,
+                      start_obligation_id: updated.obligations.some(
+                        (o) =>
+                          String(o.id) === String(prev.start_obligation_id) &&
+                          o.paid < o.amount,
+                      )
+                        ? prev.start_obligation_id
+                        : "",
+                    }));
+                    notify(
+                      "Cuotas actualizadas. Revisa el mes y la aplicación antes de confirmar.",
+                    );
+                  } catch (e) {
+                    setError(e.message);
+                  }
+                }}
+              >
+                Actualizar cuotas y aplicación
+              </button>
             </>
           )}
         </Form>

@@ -1,4 +1,4 @@
-# Reportería, estado de cuenta y cierre de contratos - v0.2.2
+# Reportería, estado de cuenta y cierre de contratos - v0.2.3
 
 ## Reportería
 
@@ -91,6 +91,10 @@ El superusuario también puede ejecutar directamente sus acciones autorizadas.
 
 ## Actualizar en Windows
 
-Cree respaldo, cierre el servidor anterior con Detener.cmd y extraiga v0.2.2
+Cree respaldo, cierre el servidor anterior con Detener.cmd y extraiga v0.2.3
 en otra carpeta. Ejecute su Iniciar.cmd y presione Ctrl+F5. La base externa
-se conserva y migra al esquema 5; no copie una base vacía sobre sus datos.
+se conserva y migra al esquema 6; no copie una base vacía sobre sus datos.
+
+El cobro y las exportaciones incluyen los meses/cuotas aplicados. Consulte
+[pagos por mes](PAGOS_POR_MES.md) para excedentes, abonos parciales y modificación
+del calendario conservando sus cuotas y aplicaciones.

@@ -16,6 +16,8 @@ HEADERS = ["Obligación", "Vencimiento", "Importe", "Pagado", "Pendiente", "Situ
 
 
 def situation(o, cutoff):
+    if o["amount"] == 0:
+        return "Sin importe"
     return (
         "Pagada"
         if o["paid"] == o["amount"]
@@ -115,7 +117,15 @@ def export_account(account, entity, cutoff, format):
             cell.number_format = f'"{currency} "#,##0.00'
         payments = book.create_sheet("Cobros")
         payments.append(
-            ["Fecha", "Folio", "Recibido", "Moneda recibida", "Aplicado al contrato", "Estado"]
+            [
+                "Fecha",
+                "Folio",
+                "Recibido",
+                "Moneda recibida",
+                "Aplicado al contrato",
+                "Estado",
+                "Meses / cuotas pagados",
+            ]
         )
         for p in account["payments"]:
             payments.append(
@@ -126,6 +136,7 @@ def export_account(account, entity, cutoff, format):
                     p["received_currency"],
                     Decimal(p["applied"]) / 100,
                     "Confirmado" if p["status"] == "valid" else "Anulado",
+                    p.get("months_paid", ""),
                 ]
             )
             payments.cell(payments.max_row, 1).number_format = "dd/mm/yyyy"
@@ -135,11 +146,13 @@ def export_account(account, entity, cutoff, format):
             payments.cell(payments.max_row, 5).number_format = f'"{currency} "#,##0.00'
         for ws, head, widths in (
             (sheet, header, [33, 28, 22, 22, 22, 20]),
-            (payments, 1, [18, 30, 22, 23, 27, 20]),
+            (payments, 1, [18, 30, 22, 23, 27, 20, 65]),
         ):
             ws.sheet_view.showGridLines = False
             ws.freeze_panes = f"C{head + 1}"
-            ws.auto_filter.ref = f"A{head}:F{ws.max_row - (1 if ws == sheet else 0)}"
+            ws.auto_filter.ref = (
+                f"A{head}:{'F' if ws == sheet else 'G'}{ws.max_row - (1 if ws == sheet else 0)}"
+            )
             for i, width in enumerate(widths, 1):
                 from openpyxl.utils import get_column_letter
 
@@ -216,7 +229,7 @@ def export_account(account, entity, cutoff, format):
         for p in account["payments"]:
             payment_rows.append(
                 [
-                    p["payment_date"] + " / " + p["folio"],
+                    p["payment_date"] + " / " + p["folio"] + " - " + p.get("months_paid", ""),
                     f"{p['received_currency']} {p['received'] / 100:,.2f}",
                     money(p["applied"]),
                     "Confirmado" if p["status"] == "valid" else "Anulado",

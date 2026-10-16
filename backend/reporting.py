@@ -67,13 +67,16 @@ def build_reports(db, entity, kind, since, until, state):
     clients, lots, contracts, payments = [
         selected(t) for t in ("clients", "lots", "contracts", "payments")
     ]
+    from .payment_allocation import allocation_map, allocation_text
+
+    payment_details = allocation_map(db, [p["id"] for p in payments])
     client_names = {r["id"]: r["name"] for r in clients}
     lot_codes = {r["id"]: r["code"] for r in lots}
     obligations = [
         dict(r)
         for r in db.execute(
-            "SELECT o.* FROM obligations o JOIN contracts c ON c.id=o.contract_id"
-            + (" WHERE c.entity_id=?" if entity else "")
+            "SELECT o.* FROM obligations o JOIN contracts c ON c.id=o.contract_id WHERE o.retired=0"
+            + (" AND c.entity_id=?" if entity else "")
             + " ORDER BY o.contract_id,o.number",
             [entity] if entity else [],
         )
@@ -159,7 +162,7 @@ def build_reports(db, entity, kind, since, until, state):
                 else not lot["deleted_at"] and lot["status"] == state
             )
         ]
-    if kind in ("all", "payments"):
+    if kind in ("all", "payments", "finances"):
         folios = {
             r["payment_id"]: r["folio"] for r in db.execute("SELECT payment_id,folio FROM receipts")
         }
@@ -180,9 +183,31 @@ def build_reports(db, entity, kind, since, until, state):
                 "Método": p["method"],
                 "Referencia": p["bank_reference"],
                 "Estado": STATES[p["status"]],
+                "Meses / cuotas pagados": allocation_text(
+                    payment_details.get(p["id"], []), contract_map[p["contract_id"]]["currency"]
+                ),
             }
             for p in payments
             if period(p["payment_date"]) and (not state or p["status"] == state)
+        ]
+        tables["Aplicaciones por mes"] = [
+            {
+                "Pago": p["id"],
+                "Folio": folios.get(p["id"], ""),
+                "Lotificadora": names[p["entity_id"]],
+                "Contrato": p["contract_id"],
+                "Cliente": client_names[p["client_id"]],
+                "Lote": lot_codes[contract_map[p["contract_id"]]["lot_id"]],
+                "Fecha de pago": p["payment_date"],
+                "Mes / cuota": d["label"],
+                "Vencimiento": d["due_date"],
+                "Moneda": contract_map[p["contract_id"]]["currency"],
+                "Aplicado": amount(d["amount"]),
+                "Estado cobro": STATES[p["status"]],
+            }
+            for p in payments
+            if period(p["payment_date"]) and (not state or p["status"] == state)
+            for d in payment_details.get(p["id"], [])
         ]
     if kind in ("all", "overdue"):
         tables["Cobros vencidos"] = [

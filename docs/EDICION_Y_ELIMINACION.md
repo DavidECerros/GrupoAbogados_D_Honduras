@@ -1,4 +1,4 @@
-# Edición, eliminación y tarifas — v0.2.2
+# Edición, eliminación y tarifas — v0.2.3
 
 ## Tarifas independientes por lotificadora
 
@@ -71,11 +71,11 @@ plan de pagos y escrituración.
 
 ## Pruebas y actualización
 
-La versión incluye 93 pruebas, con edición repetida de lotes, clientes, reservas,
+La versión incluye 101 pruebas, con edición repetida de lotes, clientes, reservas,
 contratos, cobros y planos; tarifas distintas por entidad; restauración de
 respaldos y verificaciones de permisos y saldos.
 
-Cree respaldo, detenga la versión anterior y use el paquete Windows v0.2.2 en
+Cree respaldo, detenga la versión anterior y use el paquete Windows v0.2.3 en
 una carpeta nueva. Ejecute su Iniciar.cmd y recargue con Ctrl+F5. Se conservan
-los datos externos y se migra al esquema 5. No use el acceso directo anterior
+los datos externos y se migra al esquema 6. No use el acceso directo anterior
 hasta que apunte a la carpeta nueva.

@@ -56,7 +56,7 @@ async def lifespan(app):
 
 app = FastAPI(
     title="Grupo Abogados D Honduras",
-    version="0.2.2",
+    version="0.2.3",
     docs_url=None,
     redoc_url=None,
     openapi_url=None,
@@ -952,6 +952,13 @@ def pay(data: m.Payment, user: User, db: DB):
     return result
 
 
+@app.post("/api/payments/preview")
+def preview_payment(data: m.Payment, user: User, db: DB):
+    from .payment_allocation import plan_payment
+
+    return plan_payment(db, user, data)
+
+
 @app.post("/api/payments/{identifier}/void")
 def void(identifier: int, data: m.Reason, user: User, db: DB):
     void_payment(db, user, identifier, data.reason)
@@ -1040,8 +1047,15 @@ def payments(
         + selected
         + ") p JOIN clients cl ON cl.id=p.client_id JOIN contracts c ON c.id=p.contract_id JOIN lots l ON l.id=c.lot_id JOIN receipts r ON r.payment_id=p.id JOIN users u ON u.id=p.created_by ORDER BY p.id DESC"
     )
+    from .payment_allocation import allocation_map, allocation_text
+
+    records = [dict(r) for r in db.execute(sql, (*args, limit, offset))]
+    details = allocation_map(db, [r["id"] for r in records])
+    for record in records:
+        currency = row(db, "contracts", record["contract_id"])["currency"]
+        record["months_paid"] = allocation_text(details.get(record["id"], []), currency)
     return {
-        "items": [dict(r) for r in db.execute(sql, (*args, limit, offset))],
+        "items": records,
         "total": db.execute("SELECT COUNT(*) FROM payments WHERE " + where, args).fetchone()[0],
     }
 
@@ -1186,6 +1200,15 @@ def request_approval(entity: int, data: m.Approval, user: User, db: DB):
         )
     if data.action == "amend_contract":
         m.Amendment(reason=data.reason, **data.payload)
+        from .finance import schedule_token
+
+        current_token = schedule_token(db, data.record_id)
+        require(
+            data.payload.get("expected_schedule", current_token) == current_token,
+            "El contrato cambió. Abra de nuevo el estado de cuenta antes de solicitar la modificación",
+            409,
+        )
+        data.payload["expected_schedule"] = current_token
     identifier = db.execute(
         "INSERT INTO approvals(entity_id,action,record_id,payload,reason,requested_by,created_at) VALUES(?,?,?,?,?,?,?)",
         (
@@ -1376,11 +1399,17 @@ def export(user: User, db: DB, entity: int | None = None, month: str = ""):
             [month, *args],
         )
     ]
+    from .payment_allocation import allocation_map, allocation_text
+
+    details = allocation_map(db, [p["id"] for p in tables["Pagos"]])
+    for payment in tables["Pagos"]:
+        currency = row(db, "contracts", payment["contract_id"])["currency"]
+        payment["meses_pagados"] = allocation_text(details.get(payment["id"], []), currency)
     tables["Cuotas"] = [
         dict(r)
         for r in db.execute(
-            "SELECT o.*,c.entity_id,c.currency FROM obligations o JOIN contracts c ON c.id=o.contract_id"
-            + (" WHERE c.entity_id=?" if entity else ""),
+            "SELECT o.*,c.entity_id,c.currency FROM obligations o JOIN contracts c ON c.id=o.contract_id WHERE o.retired=0"
+            + (" AND c.entity_id=?" if entity else ""),
             args,
         )
     ]
@@ -1445,7 +1474,34 @@ def export_mine(
     if until:
         sql += " AND p.payment_date<=?"
         args.append(str(until))
-    tables = {"Mis pagos": [dict(r) for r in db.execute(sql, args)]}
+    from decimal import Decimal
+
+    from .payment_allocation import allocation_map, allocation_text
+
+    records = [dict(r) for r in db.execute(sql, args)]
+    details = allocation_map(db, [r["id"] for r in records])
+    applications = []
+    for record in records:
+        currency = row(db, "contracts", record["contract_id"])["currency"]
+        record["contract_currency"] = currency
+        record["meses_pagados"] = allocation_text(details.get(record["id"], []), currency)
+        for item in details.get(record["id"], []):
+            applications.append(
+                {
+                    "Folio": record["folio"],
+                    "Contrato": record["contract_id"],
+                    "Cliente": record["client"],
+                    "Lote": record["lot"],
+                    "Mes / cuota": item["label"],
+                    "Vencimiento": item["due_date"],
+                    "Moneda": currency,
+                    "Aplicado": Decimal(item["amount"]) / 100,
+                    "Estado cobro": record["status"],
+                }
+            )
+        for field in ("received", "applied", "balance_after"):
+            record[field] = Decimal(record[field]) / 100
+    tables = {"Mis pagos": records, "Aplicaciones por mes": applications}
     audit(db, user, "export_own_payments", entity, kind="export")
     return Response(
         artifacts.export_excel(db, tables),

@@ -6,7 +6,7 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import HTTPException
 
-from .db import audit, now, setting, today
+from .db import audit, now, today
 
 
 def cents(value):
@@ -44,6 +44,27 @@ def admin(user):
     require(user["role"] == "superuser", "Se requiere superusuario", 403)
 
 
+def monthly_due(first_due, index):
+    month_index = first_due.year * 12 + first_due.month - 1 + index
+    year, month = divmod(month_index, 12)
+    require(year <= 9999, "El calendario de cuotas excede las fechas permitidas")
+    month += 1
+    return date(year, month, min(first_due.day, calendar.monthrange(year, month)[1]))
+
+
+def schedule_token(db, contract):
+    state = {
+        "contract": row(db, "contracts", contract),
+        "obligations": [
+            dict(r)
+            for r in db.execute(
+                "SELECT * FROM obligations WHERE contract_id=? ORDER BY id", (contract,)
+            )
+        ],
+    }
+    return hashlib.sha256(json.dumps(state, sort_keys=True).encode()).hexdigest()
+
+
 def schedule(
     db, contract, price, down, count, down_due, first_due, include_down=True, start_number=1
 ):
@@ -55,11 +76,7 @@ def schedule(
         )
     base = (price - down) // count
     for index in range(count):
-        month_index = first_due.year * 12 + first_due.month - 1 + index
-        year, month = divmod(month_index, 12)
-        require(year <= 9999, "El calendario de cuotas excede las fechas permitidas")
-        month += 1
-        due = date(year, month, min(first_due.day, calendar.monthrange(year, month)[1]))
+        due = monthly_due(first_due, index)
         amount = base if index < count - 1 else price - down - base * (count - 1)
         db.execute(
             "INSERT INTO obligations(contract_id,number,due_date,amount) VALUES(?,?,?,?)",
@@ -77,6 +94,7 @@ def create_sale(db, user, entity, data):
         "Restaure el lote o cliente antes de contratar",
         409,
     )
+
     require(
         lot["entity_id"] == entity and client["entity_id"] == entity,
         "Registros de otra entidad",
@@ -167,7 +185,8 @@ def statement(db, user, identifier):
     obligations = [
         dict(r)
         for r in db.execute(
-            "SELECT * FROM obligations WHERE contract_id=? ORDER BY number", (identifier,)
+            "SELECT * FROM obligations WHERE contract_id=? AND retired=0 ORDER BY number",
+            (identifier,),
         )
     ]
     # Account statement is permitted for collection; payment operator identity stays private.
@@ -178,11 +197,18 @@ def statement(db, user, identifier):
             (identifier,),
         )
     ]
+    from .payment_allocation import allocation_map, allocation_text
+
+    details = allocation_map(db, [p["id"] for p in payments])
+    for payment in payments:
+        payment["allocations"] = details.get(payment["id"], [])
+        payment["months_paid"] = allocation_text(payment["allocations"], contract["currency"])
     return {
         **contract,
         "client": row(db, "clients", contract["client_id"]),
         "lot": row(db, "lots", contract["lot_id"]),
         "balance": balance(db, identifier),
+        "schedule_token": schedule_token(db, identifier),
         "commercial_status": commercial_status(contract, balance(db, identifier)),
         "obligations": obligations,
         "payments": payments,
@@ -201,6 +227,10 @@ def create_payment(db, user, data):
     require(contract["status"] == "active", "El contrato está anulado; no admite cobros", 409)
     entity = authorize(db, user, contract["entity_id"], True)
     canonical = data.model_dump(mode="json")
+    if canonical.get("start_obligation_id") is None:
+        canonical.pop("start_obligation_id", None)
+    if canonical.get("allocation_token") is None:
+        canonical.pop("allocation_token", None)
     fingerprint = hashlib.sha256(json.dumps(canonical, sort_keys=True).encode()).hexdigest()
     previous = db.execute(
         "SELECT * FROM payments WHERE operation_id=?", (data.operation_id,)
@@ -212,17 +242,11 @@ def create_payment(db, user, data):
             409,
         )
         return payment_result(db, previous["id"])
-    received, applied, rate = cents(data.amount), cents(data.amount), None
-    if data.currency != contract["currency"]:
-        rate = setting(db, "exchange_rate")
-        require(rate and Decimal(rate) > 0, "El superusuario debe configurar la tasa HNL por USD")
-        amount = (
-            data.amount / Decimal(rate) if data.currency == "HNL" else data.amount * Decimal(rate)
-        )
-        applied = cents(amount)
-    require(applied > 0, "El importe convertido es menor que un centavo")
-    before_balance = balance(db, contract["id"])
-    require(applied <= before_balance, "El pago excede el saldo pendiente", 409)
+    from .payment_allocation import plan_payment
+
+    plan = plan_payment(db, user, data)
+    received, applied, rate = plan["received"], plan["applied"], plan["rate"]
+    before_balance = plan["balance_before"]
     require(data.method == "cash" or data.bank_reference, "Se requiere comprobante bancario")
     payment_date = data.payment_date or today(db)
     require(payment_date <= today(db), "No se aceptan fechas de pago futuras")
@@ -247,18 +271,15 @@ def create_payment(db, user, data):
             before_balance - applied,
         ),
     ).lastrowid
-    remaining = applied
-    for obligation in db.execute(
-        "SELECT * FROM obligations WHERE contract_id=? AND paid<amount ORDER BY CASE WHEN number=0 THEN 0 ELSE 1 END,due_date,number",
-        (contract["id"],),
-    ).fetchall():
-        portion = min(remaining, obligation["amount"] - obligation["paid"])
-        if not portion:
-            break
-        db.execute("UPDATE obligations SET paid=paid+? WHERE id=?", (portion, obligation["id"]))
-        db.execute("INSERT INTO allocations VALUES(?,?,?)", (identifier, obligation["id"], portion))
-        remaining -= portion
-    require(remaining == 0, "No fue posible aplicar el pago", 409)
+    for allocation in plan["allocations"]:
+        db.execute(
+            "UPDATE obligations SET paid=paid+? WHERE id=?",
+            (allocation["amount"], allocation["obligation_id"]),
+        )
+        db.execute(
+            "INSERT INTO allocations VALUES(?,?,?)",
+            (identifier, allocation["obligation_id"], allocation["amount"]),
+        )
     issued = today(db)
     db.execute(
         "INSERT INTO receipt_sequences VALUES(?,?,1) ON CONFLICT(entity_id,year) DO UPDATE SET number=number+1",
@@ -287,6 +308,7 @@ def create_payment(db, user, data):
         "bank_reference": data.bank_reference,
         "operator": user["full_name"],
         "balance_after": before_balance - applied,
+        "allocations": plan["allocations"],
     }
     db.execute(
         "INSERT INTO receipts(payment_id,entity_id,year,number,folio,snapshot) VALUES(?,?,?,?,?,?)",
@@ -318,12 +340,17 @@ def create_payment(db, user, data):
 
 
 def payment_result(db, identifier):
-    return dict(
+    from .payment_allocation import allocation_map, allocation_text
+
+    result = dict(
         db.execute(
-            "SELECT p.*,r.id receipt_id,r.folio,r.status receipt_status FROM payments p JOIN receipts r ON r.payment_id=p.id WHERE p.id=?",
+            "SELECT p.*,r.id receipt_id,r.folio,r.status receipt_status,c.currency contract_currency FROM payments p JOIN receipts r ON r.payment_id=p.id JOIN contracts c ON c.id=p.contract_id WHERE p.id=?",
             (identifier,),
         ).fetchone()
     )
+    result["allocations"] = allocation_map(db, [identifier]).get(identifier, [])
+    result["months_paid"] = allocation_text(result["allocations"], result["contract_currency"])
+    return result
 
 
 def void_payment(db, user, identifier, reason):
@@ -428,44 +455,25 @@ def amend_contract(db, user, identifier, data):
             "SELECT * FROM obligations WHERE contract_id=? ORDER BY number", (identifier,)
         )
     ]
+    require(
+        data.expected_schedule is None or data.expected_schedule == schedule_token(db, identifier),
+        "El contrato o sus cobros cambiaron desde la solicitud. Revise el estado de cuenta y envíe una nueva modificación",
+        409,
+    )
     paid = sum(r["paid"] for r in obligations)
-    paid_down = obligations[0]["paid"]
+    paid_down = next(r["paid"] for r in obligations if r["number"] == 0)
     require(price >= paid, "El precio no puede ser menor que los pagos válidos aplicados")
     require(down >= paid_down, "La prima no puede ser menor que su importe ya pagado")
-    pending_down = down - paid_down
-    financed = price - paid - pending_down
-    require(financed >= 0, "Las condiciones propuestas no cubren los importes ya pagados")
     previous = {**contract, "obligations": obligations}
     db.execute(
         "INSERT INTO contract_versions(contract_id,version,snapshot,reason,created_by,created_at) VALUES(?,?,?,?,?,?)",
         (identifier, contract["version"], json.dumps(previous), data.reason, user["id"], now()),
     )
-    has_history = db.execute("SELECT 1 FROM payments WHERE contract_id=?", (identifier,)).fetchone()
-    if not has_history:
-        db.execute("DELETE FROM obligations WHERE contract_id=?", (identifier,))
-        schedule(db, identifier, price, down, data.installments, data.down_due, data.first_due)
-    else:
-        # Preserve IDs and applications for later reversals. Retire old pending amounts,
-        # retain the paid portions, and schedule only the newly agreed remaining balance.
-        db.execute(
-            "UPDATE obligations SET amount=paid WHERE contract_id=? AND number<>0", (identifier,)
-        )
-        db.execute(
-            "UPDATE obligations SET amount=?,due_date=? WHERE contract_id=? AND number=0",
-            (down, str(data.down_due), identifier),
-        )
-        first_number = max(r["number"] for r in obligations) + 1
-        schedule(
-            db,
-            identifier,
-            financed,
-            0,
-            data.installments,
-            data.down_due,
-            data.first_due,
-            include_down=False,
-            start_number=first_number,
-        )
+    from .contract_schedule import update_schedule
+    from .payment_allocation import freeze_allocations
+
+    freeze_allocations(db, identifier)
+    update_schedule(db, contract, data, price, down, obligations)
     db.execute(
         "UPDATE contracts SET price=?,down_payment=?,installments=?,down_due=?,first_due=?,version=version+1 WHERE id=?",
         (price, down, data.installments, str(data.down_due), str(data.first_due), identifier),
