@@ -89,6 +89,7 @@ def register(app, User, DB):
                 [("contracts", "lot_id"), ("reservations", "lot_id"), ("land_plans", "lot_id")]
                 if kind == "lots"
                 else [
+                    ("lots", "registered_client_id"),
                     ("contracts", "client_id"),
                     ("reservations", "client_id"),
                     ("payments", "client_id"),

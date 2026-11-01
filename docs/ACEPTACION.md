@@ -1,3 +1,15 @@
+# Evidencia de aceptación de la versión 0.2.5
+
+31 de octubre de 2026: 107 pruebas, Ruff, ESLint y compilación. Se verifican
+persistencia y edición de la ficha de escritura, conservación de contratos y
+pagos, captura sin precio y bloqueo de venta, configuración exclusiva del
+superusuario, referencias a clientes de la misma lotificadora y protección de
+depuración, medidas inválidas, importación/exportación y plantillas anteriores.
+En navegador, con datos ficticios separados de la base de trabajo, se creó un
+lote con cliente registrado, dirección de dos líneas y cuatro lados. Se editaron
+la dirección y una distancia, y se volvió a abrir para comprobar la persistencia.
+La actualización usa el esquema 7.
+
 # Evidencia de aceptación de la versión 0.2.4
 
 31 de octubre de 2026: ESLint y compilación de producción. En navegador,

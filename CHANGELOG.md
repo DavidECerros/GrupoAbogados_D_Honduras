@@ -1,5 +1,18 @@
 # Registro de versiones
 
+## 0.2.5 — 31 de octubre de 2026
+
+- Ficha de lote con cliente, documento, contacto y dirección literal de escritura.
+- Selección de cliente registrado o captura de los datos en la ficha, sin modificar
+  el catálogo de clientes ni la titularidad de contratos existentes.
+- Medidas, rumbo opcional y colindancias por lado, con alta, edición y consulta.
+- Datos de venta y superficie plegados y opcionales: se puede registrar una ficha
+  sin precio; el servidor impide venderla hasta que el superusuario lo configure.
+- Búsqueda por cliente, documento y dirección; Excel, plantillas y Reportería
+  incluyen los nuevos campos y conservan compatibilidad con plantillas anteriores.
+- Migración al esquema 7; conserva contratos, cuotas, pagos y tarifas.
+- 107 pruebas, Ruff, ESLint y compilación; creación y edición verificadas en navegador.
+
 ## 0.2.4 — 31 de octubre de 2026
 
 - Paleta azul navy y dorado en navegación, formularios, botones y resumen.

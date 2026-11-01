@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from . import admin_data, artifacts, catalog_io, land_pricing, permissions
+from . import admin_data, artifacts, catalog_io, land_pricing, lot_details, permissions
 from . import db as database
 from . import models as m
 from .db import audit, catalog_id, now, setting, today, transaction
@@ -56,7 +56,7 @@ async def lifespan(app):
 
 app = FastAPI(
     title="Grupo Abogados D Honduras",
-    version="0.2.4",
+    version="0.2.5",
     docs_url=None,
     redoc_url=None,
     openapi_url=None,
@@ -674,11 +674,11 @@ def lots(
 ):
     authorize(db, user, entity)
     limit, offset = pagination(page, size)
-    where = "entity_id=? AND (code LIKE ? OR description LIKE ?) AND (?='' OR status=?)"
+    where = "entity_id=? AND (code LIKE ? OR description LIKE ? OR deed_address LIKE ? OR deed_client_name LIKE ? OR deed_client_document LIKE ?) AND (?='' OR status=?)"
     require(view in ("active", "deleted", "all"), "Vista inválida")
     if view != "all":
         where += " AND deleted_at IS " + ("NOT " if view == "deleted" else "") + "NULL"
-    filters = (entity, f"%{q}%", f"%{q}%", state, state)
+    filters = (entity, *([f"%{q}%"] * 5), state, state)
     return {
         "items": [
             land_pricing.describe(db, dict(r))
@@ -710,27 +710,20 @@ def create_lot(entity: int, data: m.Lot, user: User, db: DB):
     permissions.check(user, "lots", True)
     authorize(db, user, entity, True)
     require(
-        user["role"] == "superuser" or data.pricing_unit != "fixed",
+        user["role"] == "superuser" or data.pricing_unit != "fixed" or data.price is None,
         "Solo el superusuario puede establecer un precio fijo",
         403,
     )
     catalog_code_available(db, entity, data.code)
+    values = lot_details.storage(db, entity, data)
+    values.update(entity_id=entity, id=catalog_id(db, "lots"))
     identifier = db.execute(
-        "INSERT INTO lots(entity_id,code,description,price,currency,area_m2,pricing_unit,id) VALUES(?,?,?,?,?,?,?,?)",
-        (
-            entity,
-            data.code,
-            data.description,
-            cents(data.price),
-            data.currency,
-            land_pricing.areas(db, data),
-            data.pricing_unit,
-            catalog_id(db, "lots"),
-        ),
+        "INSERT INTO lots(" + ",".join(values) + ") VALUES(" + ",".join("?" for _ in values) + ")",
+        tuple(values.values()),
     ).lastrowid
     result = row(db, "lots", identifier)
     audit(db, user, "create_lot", entity, "lot", identifier, after=result)
-    return result
+    return lot_details.present(result)
 
 
 @app.put("/api/lots/{identifier}")
@@ -740,25 +733,29 @@ def edit_lot(identifier: int, data: m.Lot, user: User, db: DB):
     require(not previous["deleted_at"], "Restaure el lote antes de editarlo", 409)
     authorize(db, user, previous["entity_id"], True)
     if user["role"] != "superuser":
+        price_same = (
+            "price" not in data.model_fields_set
+            or (data.price is None and previous["pricing_pending"])
+            or (
+                data.price is not None
+                and not previous["pricing_pending"]
+                and cents(data.price) == previous["price"]
+            )
+        )
         require(
-            data.pricing_unit == previous["pricing_unit"]
-            and cents(data.price) == previous["price"]
-            and data.currency == previous["currency"],
+            price_same
+            and all(
+                key not in data.model_fields_set or getattr(data, key) == previous[key]
+                for key in ("pricing_unit", "currency")
+            ),
             "Solo el superusuario puede cambiar el precio, moneda o modalidad del lote",
             403,
         )
+    values = lot_details.storage(db, previous["entity_id"], data, previous)
     catalog_code_available(db, previous["entity_id"], data.code, identifier)
     db.execute(
-        "UPDATE lots SET code=?,description=?,price=?,currency=?,area_m2=?,pricing_unit=? WHERE id=?",
-        (
-            data.code,
-            data.description,
-            cents(data.price),
-            data.currency,
-            land_pricing.areas(db, data),
-            data.pricing_unit,
-            identifier,
-        ),
+        "UPDATE lots SET " + ",".join(key + "=?" for key in values) + " WHERE id=?",
+        (*values.values(), identifier),
     )
     result = row(db, "lots", identifier)
     audit(
@@ -771,7 +768,7 @@ def edit_lot(identifier: int, data: m.Lot, user: User, db: DB):
         before=previous,
         after=result,
     )
-    return result
+    return lot_details.present(result)
 
 
 @app.get("/api/entities/{entity}/reservations")
@@ -1647,10 +1644,11 @@ def close_other_sessions(user: User, request: Request, db: DB):
 def catalog_template(kind: str, user: User, db: DB):
     admin(user)
     catalog_io.kind_valid(kind)
-    path = Path(__file__).with_name("templates") / (kind + ".xlsx")
-    require(path.is_file(), "Plantilla no disponible", 404)
-    return FileResponse(
-        path, filename=("Plantilla_Clientes.xlsx" if kind == "clients" else "Plantilla_Lotes.xlsx")
+    filename = "Plantilla_Clientes.xlsx" if kind == "clients" else "Plantilla_Lotes.xlsx"
+    return Response(
+        catalog_io.template(kind),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

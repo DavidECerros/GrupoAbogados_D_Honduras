@@ -8,6 +8,7 @@ import {
   UserCheck,
   Download,
 } from "lucide-react";
+import { LotDeedFields, emptyBoundaries } from "./lot-deed";
 import { CatalogImport } from "./data-tools";
 import { EntityRates, RecordActions, RecordFilter } from "./record-tools";
 import { api, money } from "./api";
@@ -75,7 +76,43 @@ export function Catalog({
             title: "Lote",
             render: (r) => <strong>{r.code}</strong>,
           },
-          { key: "description", title: "Ubicación" },
+          {
+            key: "deed_client_name",
+            title: "Cliente",
+            render: (r) => (
+              <>
+                <strong>{r.deed_client_name || "Sin registrar"}</strong>
+                <small className="block">{r.deed_client_document}</small>
+              </>
+            ),
+          },
+          {
+            key: "description",
+            title: "Dirección según escritura",
+            render: (r) => r.deed_address || r.description || "Sin registrar",
+          },
+          {
+            key: "boundaries",
+            title: "Colindancias",
+            render: (r) =>
+              r.boundaries?.length ? (
+                <details className="lot-boundary-summary">
+                  <summary>{r.boundaries.length} lados</summary>
+                  <ul>
+                    {r.boundaries.map((b, i) => (
+                      <li key={i}>
+                        <strong>{b.side}</strong>: {b.distance} m · {b.neighbor}
+                        {b.bearing && (
+                          <small className="block">Rumbo: {b.bearing}</small>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              ) : (
+                "Sin registrar"
+              ),
+          },
           {
             key: "area_m2",
             title: "Área m² / vara²",
@@ -93,13 +130,17 @@ export function Catalog({
             title: "Valor de nueva venta",
             render: (r) => (
               <>
-                {r.quotation
-                  ? money(r.quotation.price, r.quotation.currency)
-                  : r.quotation_error}
+                {r.pricing_pending
+                  ? "Pendiente de precio"
+                  : r.quotation
+                    ? money(r.quotation.price, r.quotation.currency)
+                    : r.quotation_error}
                 <small className="block">
-                  {r.pricing_unit === "fixed"
-                    ? "Precio fijo"
-                    : "Por " + (r.pricing_unit === "m2" ? "m²" : "vara²")}
+                  {r.pricing_pending
+                    ? "Configura los datos de venta"
+                    : r.pricing_unit === "fixed"
+                      ? "Precio fijo"
+                      : "Por " + (r.pricing_unit === "m2" ? "m²" : "vara²")}
                 </small>
               </>
             ),
@@ -232,7 +273,7 @@ export function Catalog({
           placeholder={
             isClient
               ? "Buscar por nombre o documento"
-              : "Buscar por lote o ubicación"
+              : "Buscar por lote, cliente o dirección"
           }
         />
         {isClient && (
@@ -456,7 +497,16 @@ function CatalogForm({
             price: initial.price ? (initial.price / 100).toFixed(2) : "",
             currency: initial.currency || "HNL",
             area_m2: initial.area_m2 || "0",
-            pricing_unit: initial.pricing_unit || (admin ? "fixed" : "m2"),
+            pricing_unit: initial.pricing_unit || "fixed",
+            registered_client_id: initial.registered_client_id || null,
+            deed_client_name: initial.deed_client_name || "",
+            deed_client_document: initial.deed_client_document || "",
+            deed_client_phone: initial.deed_client_phone || "",
+            deed_client_email: initial.deed_client_email || "",
+            deed_address: initial.deed_address || "",
+            boundaries: initial.boundaries?.length
+              ? initial.boundaries
+              : emptyBoundaries(),
           }
         : {
             name: initial.name || "",
@@ -465,6 +515,9 @@ function CatalogForm({
           },
   );
   const update = (key, value) => setData((prev) => ({ ...prev, [key]: value }));
+  const [configurePrice, setConfigurePrice] = useState(
+    Boolean(initial.id && !initial.pricing_pending),
+  );
   const [areaUnit, setAreaUnit] = useState("m2"),
     [conversion, setConversion] = useState(0.697224),
     [prices, setPrices] = useState(null);
@@ -489,10 +542,8 @@ function CatalogForm({
         body: lot
           ? {
               ...data,
-              price:
-                data.pricing_unit === "fixed"
-                  ? data.price
-                  : data.price || "0.01",
+              price: configurePrice ? data.price || null : null,
+              ...(configurePrice ? {} : { pricing_unit: "fixed" }),
               ...(areaUnit === "v2"
                 ? { area_v2: data.area_m2 || "0", area_m2: "0" }
                 : { area_m2: data.area_m2 || "0" }),
@@ -504,6 +555,7 @@ function CatalogForm({
   }
   return (
     <Modal
+      wide={lot}
       title={
         (initial.id ? "Editar " : "Nuevo ") +
         (client ? "cliente" : lot ? "lote" : "lotificadora")
@@ -557,107 +609,121 @@ function CatalogForm({
               </Field>
             </>
           ) : lot ? (
-            <>
-              <Select
-                title="Cómo se determina el precio del lote"
-                disabled={!admin}
-                options={[
-                  {
-                    value: "fixed",
-                    label: "Precio total fijo: usar el valor ingresado",
-                  },
-                  {
-                    value: "m2",
-                    label: "Por m²: usar tarifa de esta lotificadora",
-                  },
-                  {
-                    value: "v2",
-                    label: "Por vara²: usar tarifa de esta lotificadora",
-                  },
-                ]}
-                value={data.pricing_unit}
-                onChange={(e) => update("pricing_unit", e.target.value)}
-              />
-              <Input
-                title="Código del lote"
-                required
-                value={data.code}
-                onChange={(e) => update("code", e.target.value)}
-              />
-              <Input
-                title="Ubicación o descripción"
-                value={data.description}
-                onChange={(e) => update("description", e.target.value)}
-              />
-              {data.pricing_unit === "fixed" ? (
-                <Input
-                  title="Precio total fijo del lote"
-                  readOnly={!admin}
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  required
-                  value={data.price}
-                  onChange={(e) => update("price", e.target.value)}
-                />
-              ) : (
-                <p className="info-box">
-                  Precio por superficie. Se usa la tarifa de esta lotificadora:{" "}
-                  {prices?.currency}{" "}
-                  {data.pricing_unit === "m2"
-                    ? prices?.price_m2 || "Sin configurar"
-                    : prices?.price_v2 || "Sin configurar"}{" "}
-                  por {data.pricing_unit === "m2" ? "m²" : "vara²"}. Para vender
-                  por un total como 250,000, selecciona Precio total fijo.
-                </p>
-              )}
-              <Select
-                title="Unidad para ingresar el área"
-                options={[
-                  { value: "m2", label: "Metros cuadrados (m²)" },
-                  { value: "v2", label: "Varas cuadradas (vara²)" },
-                ]}
-                value={areaUnit}
-                onChange={(e) => {
-                  const unit = e.target.value;
-                  update(
-                    "area_m2",
-                    (
-                      Number(data.area_m2) *
-                      (unit === "v2" ? 1 / conversion : conversion)
-                    ).toFixed(6),
-                  );
-                  setAreaUnit(unit);
-                }}
-              />
-              <Input
-                title={
-                  "Área del lote en " + (areaUnit === "m2" ? "m²" : "vara²")
-                }
-                type="number"
-                min="0"
-                step="0.000001"
-                required
-                value={data.area_m2}
-                onChange={(e) => update("area_m2", e.target.value)}
-                hint={
-                  "Equivalente: " +
-                  (
-                    Number(data.area_m2) *
-                    (areaUnit === "m2" ? 1 / conversion : conversion)
-                  ).toFixed(4) +
-                  (areaUnit === "m2" ? " vara²" : " m²")
-                }
-              />
+            <div className="lot-deed-form">
+              <LotDeedFields data={data} update={update} entity={entity} />
+              <details className="lot-selling-settings">
+                <summary>Datos de venta y superficie (opcional)</summary>
+                <label className="confirm">
+                  <input
+                    type="checkbox"
+                    checked={configurePrice}
+                    disabled={!admin}
+                    onChange={(e) => setConfigurePrice(e.target.checked)}
+                  />
+                  Definir precio de venta
+                </label>
+                {!configurePrice && (
+                  <p className="muted">
+                    Puedes guardar la ficha sin precio. El superusuario podrá
+                    configurarlo después para registrar una venta.
+                  </p>
+                )}
+                {configurePrice && (
+                  <div className="form-grid">
+                    <Select
+                      title="Cómo se determina el precio del lote"
+                      disabled={!admin}
+                      options={[
+                        {
+                          value: "fixed",
+                          label: "Precio total fijo: usar el valor ingresado",
+                        },
+                        {
+                          value: "m2",
+                          label: "Por m²: usar tarifa de esta lotificadora",
+                        },
+                        {
+                          value: "v2",
+                          label: "Por vara²: usar tarifa de esta lotificadora",
+                        },
+                      ]}
+                      value={data.pricing_unit}
+                      onChange={(e) => update("pricing_unit", e.target.value)}
+                    />
+                    {data.pricing_unit === "fixed" ? (
+                      <Input
+                        title="Precio total fijo del lote"
+                        readOnly={!admin}
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        required
+                        value={data.price}
+                        onChange={(e) => update("price", e.target.value)}
+                      />
+                    ) : (
+                      <p className="info-box">
+                        Precio por superficie. Se usa la tarifa de esta
+                        lotificadora: {prices?.currency}{" "}
+                        {data.pricing_unit === "m2"
+                          ? prices?.price_m2 || "Sin configurar"
+                          : prices?.price_v2 || "Sin configurar"}{" "}
+                        por {data.pricing_unit === "m2" ? "m²" : "vara²"}. Para
+                        vender por un total como 250,000, selecciona Precio
+                        total fijo.
+                      </p>
+                    )}
+                    <Select
+                      title="Unidad para ingresar el área"
+                      options={[
+                        { value: "m2", label: "Metros cuadrados (m²)" },
+                        { value: "v2", label: "Varas cuadradas (vara²)" },
+                      ]}
+                      value={areaUnit}
+                      onChange={(e) => {
+                        const unit = e.target.value;
+                        update(
+                          "area_m2",
+                          (
+                            Number(data.area_m2) *
+                            (unit === "v2" ? 1 / conversion : conversion)
+                          ).toFixed(6),
+                        );
+                        setAreaUnit(unit);
+                      }}
+                    />
+                    <Input
+                      title={
+                        "Área del lote en " +
+                        (areaUnit === "m2" ? "m²" : "vara²")
+                      }
+                      type="number"
+                      min="0"
+                      step="0.000001"
+                      required
+                      value={data.area_m2}
+                      onChange={(e) => update("area_m2", e.target.value)}
+                      hint={
+                        "Equivalente: " +
+                        (
+                          Number(data.area_m2) *
+                          (areaUnit === "m2" ? 1 / conversion : conversion)
+                        ).toFixed(4) +
+                        (areaUnit === "m2" ? " vara²" : " m²")
+                      }
+                    />
 
-              <Select
-                title="Moneda"
-                disabled={!admin}
-                options={["HNL", "USD"]}
-                value={data.currency}
-                onChange={(e) => update("currency", e.target.value)}
-              />
-            </>
+                    <Select
+                      title="Moneda"
+                      disabled={!admin}
+                      options={["HNL", "USD"]}
+                      value={data.currency}
+                      onChange={(e) => update("currency", e.target.value)}
+                    />
+                  </div>
+                )}
+              </details>
+            </div>
           ) : (
             <>
               <Input

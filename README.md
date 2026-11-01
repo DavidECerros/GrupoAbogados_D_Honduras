@@ -3,7 +3,7 @@
 Gestor local de lotificadoras, ventas y cobros para Grupo Abogados D Honduras.
 Implementación del documento de requisitos del 29 de septiembre de 2026.
 
-La versión 0.2.4 incorpora tarifas independientes por lotificadora y acciones
+La versión 0.2.5 incorpora tarifas independientes por lotificadora y acciones
 de edición, eliminación recuperable y anulación con respaldo. Distingue el
 precio total fijo del precio calculado por superficie y muestra el desglose
 total menos prima. Mantiene roles, planos de reunión y mapa opcional de Honduras.
@@ -13,7 +13,9 @@ Incluye cobros por mes con excedentes, recibos y reportes desglosados, y
 modificación de cuotas en el mismo plan, con envío a Autorizaciones.
 La interfaz usa azul navy y dorado, botones con respuesta visual y una barra
 de lotificadoras con navegación por teclado y desplazamiento horizontal.
-Consulte [la barra de trabajo](docs/INTERFAZ.md), [pagos por mes y modificación del plan](docs/PAGOS_POR_MES.md),
+El formulario de lotes incorpora cliente, dirección de escritura y medidas/colindancias;
+los datos de venta y superficie son opcionales y se muestran plegados.
+Consulte [la ficha de escritura del lote](docs/FICHA_DE_LOTES.md), [la barra de trabajo](docs/INTERFAZ.md), [pagos por mes y modificación del plan](docs/PAGOS_POR_MES.md),
 [reportería y estados](docs/REPORTERIA_Y_ESTADOS.md),
 [edición y eliminación](docs/EDICION_Y_ELIMINACION.md),
 [áreas, permisos y planos](docs/AREAS_PERMISOS_PLANOS.md),
@@ -22,7 +24,7 @@ Consulte [la barra de trabajo](docs/INTERFAZ.md), [pagos por mes y modificación
 
 ## Estado del proyecto
 
-Primera versión funcional, v0.2.4. Incluye interfaz en español y backend para
+Primera versión funcional, v0.2.5. Incluye interfaz en español y backend para
 autenticación, segregación por entidad, clientes, lotes, reservas, contratos, cuotas,
 cobros, cesiones, autorizaciones, auditoría, recibos PDF, exportación Excel y
 respaldo/restauración. Las verificaciones y límites están en
@@ -39,7 +41,7 @@ formulario para crear el único superusuario.
 
 ## Uso en Windows
 
-El paquete `GrupoAbogados_D_Honduras-Windows-v0.2.4.zip` contiene Python,
+El paquete `GrupoAbogados_D_Honduras-Windows-v0.2.5.zip` contiene Python,
 dependencias y frontend compilado. Extraiga el ZIP en una carpeta local y abra
 `Iniciar.cmd`. El navegador abrirá `http://localhost:8000`.
 Use `CrearAccesoDirecto.ps1` para crear el acceso directo opcional.

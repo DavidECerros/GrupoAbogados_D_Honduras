@@ -142,10 +142,14 @@ def build_reports(db, entity, kind, since, until, state):
                 "Lotificadora": names[lot["entity_id"]],
                 "Código": lot["code"],
                 "Ubicación": lot["description"],
+                "Cliente según escritura": lot["deed_client_name"],
+                "Documento según escritura": lot["deed_client_document"],
+                "Dirección según escritura": lot["deed_address"],
+                "Medidas y colindancias": lot["boundaries"],
                 "Área m²": Decimal(lot["area_m2"]),
                 "Moneda precio fijo": lot["currency"],
                 "Precio fijo registrado": amount(lot["price"])
-                if lot["pricing_unit"] == "fixed"
+                if lot["pricing_unit"] == "fixed" and not lot["pricing_pending"]
                 else None,
                 "Modo de precio": lot["pricing_unit"],
                 "Valor de nueva venta": amount(lot["quote"]["price"]) if lot["quote"] else None,

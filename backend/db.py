@@ -70,7 +70,7 @@ def initialize():
 def migrate(db):
     """Upgrade existing v1 databases without replacing any customer records."""
     version = db.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
-    if version not in (1, 2, 3, 4, 5, 6):
+    if version not in (1, 2, 3, 4, 5, 6, 7):
         raise ValueError("Esquema incompatible")
     db.execute("BEGIN IMMEDIATE")
     try:
@@ -84,6 +84,14 @@ def migrate(db):
             "lots": {
                 "area_m2": "TEXT NOT NULL DEFAULT '0'",
                 "pricing_unit": "TEXT NOT NULL DEFAULT 'fixed' CHECK(pricing_unit IN ('fixed','m2','v2'))",
+                "pricing_pending": "INTEGER NOT NULL DEFAULT 0 CHECK(pricing_pending IN (0,1))",
+                "registered_client_id": "INTEGER REFERENCES clients(id)",
+                "deed_client_name": "TEXT NOT NULL DEFAULT ''",
+                "deed_client_document": "TEXT NOT NULL DEFAULT ''",
+                "deed_client_phone": "TEXT NOT NULL DEFAULT ''",
+                "deed_client_email": "TEXT NOT NULL DEFAULT ''",
+                "deed_address": "TEXT NOT NULL DEFAULT ''",
+                "boundaries": "TEXT NOT NULL DEFAULT '[]'",
             },
             "users": {
                 "profile": "TEXT NOT NULL DEFAULT 'standard' CHECK(profile IN ('standard','administrator'))",
@@ -128,7 +136,7 @@ def migrate(db):
         }.items():
             db.execute("INSERT OR IGNORE INTO settings VALUES(?,?)", (key, value))
         db.execute("DELETE FROM schema_version")
-        db.execute("INSERT INTO schema_version VALUES(6)")
+        db.execute("INSERT INTO schema_version VALUES(7)")
         db.commit()
     except BaseException:
         db.rollback()

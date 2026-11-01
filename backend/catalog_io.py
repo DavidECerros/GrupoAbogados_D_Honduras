@@ -5,15 +5,17 @@ import hashlib
 import io
 import json
 import zipfile
+from copy import copy
 from decimal import Decimal
+from pathlib import Path
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill
 from pydantic import ValidationError
 
-from . import models
+from . import lot_details, models
 from .db import audit, catalog_id, now
-from .finance import cents, require
+from .finance import require
 from .land_pricing import areas, describe
 
 FIELDS = {
@@ -37,6 +39,13 @@ FIELDS = {
         ("area_m2", "Área m²"),
         ("area_v2", "Área vara²"),
         ("pricing_unit", "Unidad de precio"),
+        ("registered_client_id", "ID cliente registrado"),
+        ("deed_client_name", "Cliente según escritura"),
+        ("deed_client_document", "Documento del cliente"),
+        ("deed_client_phone", "Teléfono del cliente"),
+        ("deed_client_email", "Correo del cliente"),
+        ("deed_address", "Dirección según escritura"),
+        ("boundaries", "Medidas y colindancias JSON"),
     ],
 }
 STATUS = {
@@ -52,6 +61,43 @@ def kind_valid(kind):
     require(kind in FIELDS, "Catálogo inválido", 404)
 
 
+def template(kind):
+    kind_valid(kind)
+    book = load_workbook(Path(__file__).with_name("templates") / (kind + ".xlsx"))
+    if kind == "lots":
+        sheet = book["Lotes"]
+        for column, (_, title) in enumerate(FIELDS[kind], 1):
+            cell = sheet.cell(1, column, title)
+            cell._style = copy(sheet.cell(1, 1)._style)
+        sheet.auto_filter.ref = f"A1:P{sheet.max_row}"
+        instructions = book["Instrucciones"]
+        instructions.append(
+            [
+                "Ficha de escritura: cliente, documento, teléfono, correo y dirección conservan el texto ingresado."
+            ]
+        )
+        instructions.append(
+            ["ID cliente registrado es opcional y debe pertenecer a la misma lotificadora."]
+        )
+        instructions.append(
+            [
+                "Precio vacío: ficha pendiente de precio, no disponible para venta hasta configurarlo."
+            ]
+        )
+        instructions.append(["Medidas y colindancias JSON: lista de lados. Ejemplo:"])
+        instructions.append(
+            ['[{"side":"Norte","bearing":"","distance":"26.00","neighbor":"Lote 9"}]']
+        )
+        instructions.append(
+            [
+                "Las plantillas anteriores siguen siendo válidas y conservan los datos nuevos al actualizar."
+            ]
+        )
+    stream = io.BytesIO()
+    book.save(stream)
+    return stream.getvalue()
+
+
 def fingerprint(db, entity, kind):
     payload = [
         dict(r)
@@ -65,7 +111,7 @@ def export_catalog(db, entity, kind, q="", state="", view="active"):
     search = (
         "(name LIKE ? OR document LIKE ?)"
         if kind == "clients"
-        else "(code LIKE ? OR description LIKE ?)"
+        else "(code LIKE ? OR description LIKE ? OR deed_address LIKE ? OR deed_client_name LIKE ? OR deed_client_document LIKE ?)"
     )
     require(view in ("active", "deleted", "all"), "Vista inválida")
     archived = (
@@ -77,7 +123,7 @@ def export_catalog(db, entity, kind, q="", state="", view="active"):
         f"SELECT * FROM {kind} WHERE entity_id=? AND {search} AND (?='' OR status=?)"
         + archived
         + " ORDER BY id",
-        (entity, f"%{q}%", f"%{q}%", state, state),
+        (entity, *([f"%{q}%"] * (2 if kind == "clients" else 5)), state, state),
     ).fetchall()
     book = Workbook()
     sheet = book.active
@@ -89,8 +135,10 @@ def export_catalog(db, entity, kind, q="", state="", view="active"):
         values = []
         for field, title in FIELDS[kind]:
             value = record[field]
-            if field in ("price", "area_m2", "area_v2"):
+            if field in ("price", "area_m2", "area_v2") and value is not None:
                 value = Decimal(value) / (100 if field == "price" else 1)
+            if field == "boundaries":
+                value = json.dumps(value, ensure_ascii=False)
             if field == "status":
                 value = next((label for label, code in STATUS.items() if code == value), value)
             values.append(value)
@@ -154,7 +202,10 @@ def read_file(content, filename, kind):
     expected = dict((title, field) for field, title in FIELDS[kind])
     require(len(headers) == len(set(headers)), "Encabezados duplicados")
     required = set(expected) - (
-        {"Área m²", "Área vara²", "Unidad de precio"} if kind == "lots" else set()
+        {"Área m²", "Área vara²", "Unidad de precio"}
+        | {title for key, title in FIELDS["lots"] if key in lot_details.DEED_FIELDS}
+        if kind == "lots"
+        else set()
     )
     require(
         required.issubset(headers) and set(headers).issubset(expected),
@@ -188,7 +239,18 @@ def plan_import(db, entity, kind, records, mode):
             raw_status = str(values.pop("status") or "").strip()
             status = STATUS.get(raw_status, raw_status)
             for key, value in list(values.items()):
-                if key in ("area_m2", "area_v2", "pricing_unit") and value in (None, ""):
+                if kind == "lots" and key == "boundaries":
+                    values[key] = json.loads(value) if value else []
+                elif kind == "lots" and key == "registered_client_id":
+                    if value not in (None, ""):
+                        require(
+                            Decimal(str(value)) == int(value),
+                            "ID cliente registrado debe ser entero",
+                        )
+                    values[key] = int(value) if value not in (None, "") else None
+                elif kind == "lots" and key == "price" and value in (None, ""):
+                    values[key] = None
+                elif key in ("area_m2", "area_v2", "pricing_unit") and value in (None, ""):
                     values.pop(key)
                 elif key not in ("price", "area_m2", "area_v2"):
                     require(
@@ -197,7 +259,7 @@ def plan_import(db, entity, kind, records, mode):
                     )
                     values[key] = str(value or "").strip()
             data = (models.Client if kind == "clients" else models.Lot)(**values).model_dump(
-                mode="json"
+                mode="json", exclude_unset=(kind == "lots")
             )
             natural = (
                 (data["document_type"], data["document"]) if kind == "clients" else (data["code"],)
@@ -242,6 +304,9 @@ def plan_import(db, entity, kind, records, mode):
                         data["pricing_unit"] = previous["pricing_unit"]
                 data["area_m2"] = areas(db, models.Lot(**data))
                 data.pop("area_v2", None)
+                lot_details.storage(
+                    db, entity, models.Lot(**data), dict(previous) if previous else None
+                )
                 require(
                     not status or status == (previous["status"] if previous else "available"),
                     "El estado del lote depende de reservas y contratos; no se importa",
@@ -273,9 +338,12 @@ def apply_import(db, user, entity, kind, changes, reason):
         data, identifier = dict(item["data"]), item["id"]
         if kind == "lots":
             model = models.Lot(**data)
-            data["area_m2"] = areas(db, model)
-            data.pop("area_v2", None)
-            data["price"] = cents(data["price"])
+            previous = (
+                dict(db.execute("SELECT * FROM lots WHERE id=?", (identifier,)).fetchone())
+                if identifier
+                else None
+            )
+            data = lot_details.storage(db, entity, model, previous)
         fields = list(data)
         if identifier:
             before = dict(db.execute(f"SELECT * FROM {kind} WHERE id=?", (identifier,)).fetchone())

@@ -45,6 +45,11 @@ def areas(db, data):
 
 
 def quote(db, lot):
+    require(
+        not lot.get("pricing_pending"),
+        "Precio pendiente: el superusuario debe configurar los datos de venta del lote",
+        409,
+    )
     rates = entity_rates(db, lot["entity_id"])
     unit = lot["pricing_unit"]
     area = Decimal(lot["area_m2"])
@@ -81,7 +86,9 @@ def quote(db, lot):
 
 
 def describe(db, lot):
-    result = dict(lot)
+    from .lot_details import present
+
+    result = present(lot)
     result["area_v2"] = str(
         (Decimal(result["area_m2"]) / factor(db)).quantize(
             Decimal(".000001"), rounding=ROUND_HALF_UP

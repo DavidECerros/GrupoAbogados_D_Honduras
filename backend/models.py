@@ -104,14 +104,28 @@ class PaymentEdit(Model):
     reason: str = Field(min_length=3, max_length=2000)
 
 
+class LotBoundary(Model):
+    side: str = Field(min_length=1, max_length=80)
+    bearing: str = Field(default="", max_length=100)
+    distance: Decimal = Field(gt=0, max_digits=14, decimal_places=4)
+    neighbor: str = Field(min_length=1, max_length=500)
+
+
 class Lot(Model):
     code: str = Field(min_length=1, max_length=80)
     description: str = Field(max_length=2000, default="")
-    price: Decimal = Field(gt=0, max_digits=14, decimal_places=2, default=Decimal("0.01"))
+    price: Decimal | None = Field(gt=0, max_digits=14, decimal_places=2, default=None)
     currency: Literal["HNL", "USD"] = "HNL"
     area_m2: Decimal = Field(ge=0, max_digits=16, decimal_places=6, default=Decimal("0"))
     area_v2: Decimal | None = Field(ge=0, max_digits=16, decimal_places=6, default=None)
     pricing_unit: Literal["fixed", "m2", "v2"] = "fixed"
+    registered_client_id: int | None = Field(default=None, gt=0)
+    deed_client_name: str = Field(default="", max_length=150)
+    deed_client_document: str = Field(default="", max_length=80)
+    deed_client_phone: str = Field(default="", max_length=50)
+    deed_client_email: str = Field(default="", max_length=150)
+    deed_address: str = Field(default="", max_length=4000)
+    boundaries: list[LotBoundary] = Field(default_factory=list, max_length=100)
 
 
 class Reservation(Model):

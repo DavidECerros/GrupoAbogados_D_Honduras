@@ -1779,6 +1779,80 @@ a.secondary:active {
     width: 28px;
   }
 }
+.lot-deed-form {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 22px;
+  min-width: 0;
+}
+.lot-boundary-summary {
+  white-space: normal;
+  min-width: 130px;
+  max-width: 300px;
+}
+.lot-boundary-summary summary {
+  cursor: pointer;
+  color: var(--navy);
+}
+.lot-boundary-summary li {
+  padding: 6px 0;
+  line-height: 1.5;
+}
+.lot-deed-section {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 20px;
+  min-width: 0;
+}
+.lot-deed-section legend {
+  padding: 0 8px;
+  font-weight: 600;
+  color: var(--navy);
+}
+.lot-deed-section .picker {
+  margin-bottom: 18px;
+}
+.lot-boundary {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--gold);
+  border-radius: 6px;
+  background: #f7f9fc;
+}
+.lot-boundary .section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.lot-selling-settings {
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
+}
+.lot-selling-settings summary {
+  cursor: pointer;
+  color: var(--navy);
+  font-weight: 600;
+  padding: 8px 0;
+}
+.lot-selling-settings summary:focus-visible {
+  outline: 2px solid var(--gold-deep);
+}
+.lot-selling-settings .confirm {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin: 18px 0;
+}
+@media (max-width: 560px) {
+  .lot-deed-section {
+    padding: 12px;
+  }
+  .lot-boundary {
+    padding: 12px;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   button,
   a,

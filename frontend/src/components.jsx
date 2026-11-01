@@ -255,6 +255,8 @@ export function Picker({
   value,
   onChange,
   predicate = () => true,
+  required = true,
+  selectedItem = null,
 }) {
   const [q, setQ] = useState(""),
     [rows, setRows] = useState([]),
@@ -286,7 +288,7 @@ export function Picker({
       <Select
         title={title}
         value={value || ""}
-        required
+        required={required}
         onChange={(e) =>
           onChange(
             Number(e.target.value),
@@ -295,13 +297,22 @@ export function Picker({
         }
         options={[
           { value: "", label: "Selecciona una opción" },
-          ...rows.map((row) => ({
-            value: row.id,
-            label: row.name
-              ? row.name + " · " + row.document
-              : row.code + " · " + label(row.status),
-          })),
-        ]}
+          ...(value &&
+          selectedItem &&
+          !rows.some((row) => row.id === Number(value))
+            ? [selectedItem]
+            : []),
+          ...rows,
+        ].map((row) =>
+          row.label !== undefined
+            ? row
+            : {
+                value: row.id,
+                label: row.name
+                  ? row.name + " · " + row.document
+                  : row.code + " · " + label(row.status),
+              },
+        )}
       />
       {error && <small className="error">{error}</small>}
     </div>

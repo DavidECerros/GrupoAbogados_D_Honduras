@@ -64,7 +64,11 @@ const pages = {
     "Personas y datos de contacto de cada lotificadora.",
     Users,
   ],
-  lots: ["Lotes", "Disponibilidad, ubicación y precios base.", Landmark],
+  lots: [
+    "Lotes",
+    "Clientes, dirección de escritura, medidas y colindancias.",
+    Landmark,
+  ],
   reservations: [
     "Reservas",
     "Compromisos vigentes y vencimientos por revisar.",
@@ -620,7 +624,7 @@ function App() {
         </main>
         <footer>
           Grupo Abogados D Honduras{" "}
-          <span>Gestión de lotificadoras · v0.2.4</span>
+          <span>Gestión de lotificadoras · v0.2.5</span>
         </footer>
       </div>
       {password && (
