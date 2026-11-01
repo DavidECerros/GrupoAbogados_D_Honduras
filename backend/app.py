@@ -56,7 +56,7 @@ async def lifespan(app):
 
 app = FastAPI(
     title="Grupo Abogados D Honduras",
-    version="0.2.3",
+    version="0.2.4",
     docs_url=None,
     redoc_url=None,
     openapi_url=None,

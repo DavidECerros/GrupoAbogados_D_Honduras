@@ -2,7 +2,7 @@
 
 ## Paquete local de Windows
 
-1. Copie el ZIP `GrupoAbogados_D_Honduras-Windows-v0.2.3.zip` al equipo principal.
+1. Copie el ZIP `GrupoAbogados_D_Honduras-Windows-v0.2.4.zip` al equipo principal.
 2. Extraiga todos sus archivos a una carpeta local, por ejemplo `C:\GrupoAbogados`.
 3. Abra `Iniciar.cmd`. El servidor se ejecuta en segundo plano y la ventana CMD
    se cierra automaticamente cuando esta listo. Cerrar el navegador no lo detiene.
@@ -41,7 +41,7 @@ una carpeta de red ni permita acceso directo desde equipos clientes.
 
 Actualización: haga respaldo, cierre el servidor con `Detener.cmd` (o Ctrl+C
 si es una version anterior), conserve la carpeta de datos y
-reemplace solo la carpeta del programa. La versión 0.2.3 migra automáticamente
+reemplace solo la carpeta del programa. La versión 0.2.4 migra automáticamente
 los esquemas 1, 2, 3, 4 y 5 al esquema 6 al iniciar: conserva los registros y agrega
 áreas, perfiles, permisos, bases de cálculo contractuales, planos, eliminación
 recuperable y tarifas por lotificadora. Al actualizar se copia la tarifa anterior

@@ -30,14 +30,25 @@ import { Empty, Form, Input, Modal } from "./components";
 import { Catalog, Users as UserScreen } from "./catalogs";
 import { Contracts, Reservations } from "./contracts";
 import { Payments } from "./payments";
-import { Approvals, Arrears, Dashboard, Transactions, Reporting } from "./reports";
+import {
+  Approvals,
+  Arrears,
+  Dashboard,
+  Transactions,
+  Reporting,
+} from "./reports";
 import { Settings } from "./settings";
 import { DatabasePanel } from "./data-tools";
 import { Plans } from "./plans";
+import { EntityBar } from "./entity-bar";
 import "./style.css";
 
 const pages = {
-  reporting: ["Reportería", "Exportaciones por lotificadora, cartera y cobros.", FileText],
+  reporting: [
+    "Reportería",
+    "Exportaciones por lotificadora, cartera y cobros.",
+    FileText,
+  ],
   plans: [
     "Planos y coordenadas",
     "Reunión de lotes, medidas, colindancias y mapa de Honduras.",
@@ -114,6 +125,7 @@ function App() {
     [contract, setContract] = useState(null),
     [help, setHelp] = useState(false);
   const toastTimer = useRef(null),
+    entitySelectionMade = useRef(false),
     lastActivity = useRef(0);
   const admin = session?.role === "superuser";
   const canRead = (key) =>
@@ -127,6 +139,8 @@ function App() {
     setSession(null);
     setCsrf("");
     setEntities([]);
+    setEntity("");
+    entitySelectionMade.current = false;
     setPassword(false);
   }
   function adopt(data) {
@@ -176,9 +190,11 @@ function App() {
         setEntity((current) =>
           current && result.some((e) => String(e.id) === String(current))
             ? current
-            : result[0]
-              ? String(result[0].id)
-              : "",
+            : !current && entitySelectionMade.current
+              ? ""
+              : result[0]
+                ? String(result[0].id)
+                : "",
         );
       })
       .catch((err) => {
@@ -222,6 +238,13 @@ function App() {
     };
   }, [session?.id, today]);
   const refresh = () => setVersion((v) => v + 1);
+  function changeEntity(next) {
+    if (String(next) === String(entity)) return;
+    entitySelectionMade.current = true;
+    setEntity(next);
+    setContract(null);
+    refresh();
+  }
   function navigate(key) {
     if (
       [
@@ -357,19 +380,21 @@ function App() {
           {admin && (
             <>
               <span className="nav-section">ADMINISTRACIÓN</span>
-              {["reporting", "entities", "users", "settings", "database"].map((key) => {
-                const Icon = pages[key][2];
-                return (
-                  <button
-                    key={key}
-                    className={screen === key ? "active" : ""}
-                    onClick={() => navigate(key)}
-                  >
-                    <Icon size={19} />
-                    <span>{pages[key][0]}</span>
-                  </button>
-                );
-              })}
+              {["reporting", "entities", "users", "settings", "database"].map(
+                (key) => {
+                  const Icon = pages[key][2];
+                  return (
+                    <button
+                      key={key}
+                      className={screen === key ? "active" : ""}
+                      onClick={() => navigate(key)}
+                    >
+                      <Icon size={19} />
+                      <span>{pages[key][0]}</span>
+                    </button>
+                  );
+                },
+              )}
             </>
           )}
         </nav>
@@ -429,25 +454,15 @@ function App() {
               <Menu size={22} />
             </button>
             <Building2 size={18} />
-            <select
-              aria-label="Lotificadora seleccionada"
-              value={entity}
-              onChange={(e) => {
-                setEntity(e.target.value);
-                refresh();
-              }}
-            >
-              {admin && !requiresEntity && (
-                <option value="">Todas las lotificadoras</option>
-              )}
-              {entities.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.name}
-                  {e.status === "archived" ? " · archivada" : ""}
-                </option>
-              ))}
-            </select>
-            {!entities.length && <span>Sin lotificadoras asignadas</span>}
+            <div className="workspace-title">
+              <small>ESPACIO DE TRABAJO</small>
+              <strong>
+                {selected?.name ||
+                  (entities.length
+                    ? "Todas las lotificadoras"
+                    : "Sin lotificadoras asignadas")}
+              </strong>
+            </div>
           </div>
           <div className="topbar-right">
             <span className="date">
@@ -475,8 +490,14 @@ function App() {
               <RefreshCw size={18} />
             </button>
           </div>
+          <EntityBar
+            entities={entities}
+            value={entity}
+            allowAll={admin && !requiresEntity}
+            onChange={changeEntity}
+          />
         </header>
-        <main>
+        <main key={`${screen}:${entity}`}>
           <div className="page-heading">
             <div>
               <span className="eyebrow">
@@ -587,7 +608,9 @@ function App() {
                 <Arrears {...common} onCollect={collect} />
               )}
               {screen === "transactions" && <Transactions {...common} />}
-              {screen === "reporting" && admin && <Reporting entity={entity} entities={entities} />}
+              {screen === "reporting" && admin && (
+                <Reporting entity={entity} entities={entities} />
+              )}
               {screen === "approvals" && <Approvals {...common} />}
               {screen === "settings" && (
                 <Settings {...common} onRestored={logoutLocal} />
@@ -597,7 +620,7 @@ function App() {
         </main>
         <footer>
           Grupo Abogados D Honduras{" "}
-          <span>Gestión de lotificadoras · v0.2.3</span>
+          <span>Gestión de lotificadoras · v0.2.4</span>
         </footer>
       </div>
       {password && (

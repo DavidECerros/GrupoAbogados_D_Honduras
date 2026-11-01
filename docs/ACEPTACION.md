@@ -1,3 +1,13 @@
+# Evidencia de aceptación de la versión 0.2.4
+
+31 de octubre de 2026: ESLint y compilación de producción. En navegador,
+selección entre dos lotificadoras ficticias, actualización manteniendo Todas,
+cambio de módulo con selección individual y navegación con flechas de teclado.
+Revisión visual de navy/dorado, botones y barra en escritorio y a 390 × 844 px;
+comprobación del desplazamiento horizontal de la barra sin desbordar la página.
+Esta entrega modifica la interfaz y conserva el esquema 6. La evidencia de las
+101 pruebas de la lógica financiera corresponde a la versión 0.2.3, a continuación.
+
 # Evidencia de aceptación de la versión 0.2.3
 
 15 de octubre de 2026: pasan 101 pruebas, Ruff, ESLint y compilación.

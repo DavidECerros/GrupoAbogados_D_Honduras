@@ -1,5 +1,16 @@
 # Registro de versiones
 
+## 0.2.4 — 31 de octubre de 2026
+
+- Paleta azul navy y dorado en navegación, formularios, botones y resumen.
+- Barra horizontal de lotificadoras con selección visible, desplazamiento y teclado.
+- Conservación de Todas las lotificadoras al actualizar datos.
+- Respuesta visual al pasar el cursor, pulsar y enfocar los botones; respeta
+  la preferencia del equipo de reducir animaciones.
+- Formularios reiniciados al cambiar de lotificadora para evitar mezclar borradores.
+- ESLint y compilación; revisión en navegador de escritorio y pantalla de 390 px.
+- Conserva el esquema 6 y los datos de versiones anteriores.
+
 ## 0.2.3 — 15 de octubre de 2026
 
 - Selección de mes/cuota en cobros, abonos parciales y excedentes a cuotas siguientes.
