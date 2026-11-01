@@ -52,6 +52,8 @@ forma controlada o `IniciarConsola.cmd` para ver la consola de diagnostico.
 
 Manuales: [instalación](docs/INSTALACION.md), [operación](docs/OPERACION.md),
 [respaldo y recuperación](docs/RECUPERACION.md).
+Para crear el ZIP por cuenta propia: [generar Windows](docs/GENERAR_WINDOWS.md).
+Para compartirlo: [opciones de nube y acceso remoto](docs/OPCIONES_ONLINE.md).
 
 ## Desarrollo del backend
 
